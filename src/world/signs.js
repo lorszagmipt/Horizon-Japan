@@ -49,7 +49,7 @@ function drawSign(f, t, e, s) {
 const SIGN_DESIGNS = [
   {
     title: "PAINTED ROADS FESTIVAL",
-    sub: "PAINTED ROADS",
+    sub: "HORIZON: JAPAN",
     bg: "#2b2f45",
     fg: "#ffffff",
     border: "#ff5c8a",
