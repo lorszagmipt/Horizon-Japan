@@ -153,7 +153,7 @@ export class UI {
     const t = this.screens.menu;
     t.innerHTML = `<div class="menu-shade"></div>
       <div class="menu-left">
-        <div class="logo"><div class="l1">HORIZON</div><div class="l2"><span class="dot"></span>JAPAN</div><div class="l3">PAINTED ROADS</div><div class="brush"></div></div>
+        <div class="logo"><div class="l1">PAINTED</div><div class="l2"><span class="dot"></span>ROADS</div><div class="l3">JAPAN</div><div class="brush"></div></div>
         <div class="menu-list">
           <div class="btn" data-act="free"><div class="ico">\u{1F697}</div><div>Свободная езда<small>Открытый мир: сакура, клёны и Фудзи</small></div></div>
           <div class="btn" data-act="events"><div class="ico">\u{1F3C1}</div><div>Заезды<small>Спринты, кольца и дрифт-зона</small></div></div>
