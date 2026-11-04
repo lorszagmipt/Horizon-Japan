@@ -32,7 +32,8 @@ export function buildRoadside(f) {
   const r = (c, u, h) => {
     for (const l of e.junctions) {
       const m = l.parent;
-      if (Math.hypot(c - m.x[l.pi], u - m.z[l.pi]) < l.child.hw + m.hw + h) {
+      const near = Math.max(l.child.hw + m.hw + h, l.shape ? l.shape.reach + h * 0.5 : 0);
+      if (Math.hypot(c - m.x[l.pi], u - m.z[l.pi]) < near) {
         return true;
       }
     }

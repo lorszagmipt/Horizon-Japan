@@ -106,6 +106,7 @@ npm run zip
 | `src/world/world.js` | Генерация мира и `groundAt` — что под колесом |
 | `src/world/terrain.js` | Рельеф и высота земли (`heightAt`) |
 | `src/world/roads.js` | Дороги: сглаживание, высота полотна, мосты, тоннель |
+| `src/world/junctions.js` | **Перекрёстки**: скруглённые углы, плавный переход высот, зебра |
 | `src/physics/colliders.js` | Препятствия: отбойники, стены, стволы |
 | `src/world/vegetation/` | Деревья, трава, цветы и их расстановка |
 | `src/world/buildings.js`, `roadside.js`, `signs.js` | Постройки, ограждения, щиты |
@@ -127,6 +128,8 @@ npm run zip
   (`power` — тяга, `vmax` — максимальная скорость в м/с, `grip` — сцепление, `drift` — лёгкость заноса, `brake` — тормоза).
 - **Поведение всех машин сразу** → `src/car/physics.js`, метод `step` (блоки подписаны комментариями).
 - **Форма дороги** → `src/world/mapData.js`, массив `ROADS`, точки `pts` (метры, X — восток, Z — север).
+- **Перекрёстки** → `src/world/junctions.js`, в начале файла: `JUNCTION_CORNER_RADIUS` — радиус скругления углов (м),
+  `JUNCTION_CROSSWALKS` — рисовать ли зебру (`true` / `false`).
 - **Время на медали** → `src/race/events.js`, поле `vref` у заезда.
 - **Тексты меню** → `src/ui/ui.js` (поиск по тексту: *Правка → Найти в файлах*, Ctrl+Shift+F).
 

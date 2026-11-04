@@ -330,19 +330,37 @@ export class Terrain {
       const z = -half + row * cell;
       for (let col = 0; col < n; col++) {
         const x = -half + col * cell;
-        let height = this.carvedHeight(x, z);
+        const base = this.carvedHeight(x, z);
+        let height = base;
+        let mask = 0;
         const road = roads.nearest(x, z, 110);
         if (road && !road.bridge) {
           const flatW = road.hw + 2.6;
-          const dh = Math.abs(height - road.h);
+          const dh = Math.abs(base - road.h);
           const blendW = flatW + 12 + road.hw * 0.5 + dh * 1.4;
           if (road.d < blendW) {
             const k = 1 - smoothstep(flatW, blendW, road.d);
             // земля у дороги подводится к высоте полотна, но на 22 см ниже
-            height = lerp(height, road.h - 0.22, k);
-            roadMask[row * n + col] = k;
+            height = lerp(base, road.h - 0.22, k);
+            mask = k;
           }
         }
+        // у перекрёстка вместо этого — по форме перекрёстка (со скруглёнными углами и плавной высотой)
+        const jn = roads.junctionAt(x, z, 10);
+        if (jn) {
+          const hw = jn.road.hw;
+          const dh = Math.abs(base - jn.h);
+          const k = 1 - smoothstep(2.6, 2.6 + 12 + hw * 0.5 + dh * 1.4, jn.F);
+          // под самим асфальтом землю опускаем глубже: сетка рельефа крупная (5 м),
+          // и иначе её треугольники могут выглядывать сквозь асфальт перекрёстка
+          const sink = 0.22 + 0.6 * smoothstep(-1, -3, jn.F);
+          // на краю зоны перекрёстка плавно возвращаемся к обычному правилу «земля у дороги»
+          const j = jn.junction;
+          const fade = smoothstep(j.reach, j.reach + 10, Math.hypot(x - j.ox, z - j.oz));
+          height = lerp(lerp(base, jn.h - sink, k), height, fade);
+          mask = lerp(k, mask, fade);
+        }
+        roadMask[row * n + col] = mask;
         heights[row * n + col] = height;
       }
     }

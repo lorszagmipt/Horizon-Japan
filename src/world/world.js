@@ -168,6 +168,30 @@ export class World {
   buildRoadMeshes() {
     const parts = this.roads.buildMeshes();
     for (const part of parts) {
+      if (part.junction) {
+        // заплатка перекрёстка — поверх обеих дорог; зебра — ещё выше
+        const jo = -2 - (4 - part.road.priority) * 1.5 - 1.5;
+        this.r.add({
+          mesh: this.r.createMesh(part.geo),
+          defines: ["ROAD"],
+          bounds: { c: part.center, r: part.radius },
+          polyOffset: [jo, jo * 2],
+          shadow: false,
+          order: 1 + (4 - part.road.priority),
+          reflect: false,
+        });
+        if (part.marks) {
+          this.r.add({
+            mesh: this.r.createMesh(part.marks),
+            bounds: { c: part.center, r: part.radius },
+            polyOffset: [jo - 2, (jo - 2) * 2],
+            shadow: false,
+            order: 2 + (4 - part.road.priority),
+            reflect: false,
+          });
+        }
+        continue;
+      }
       const offset = -2 - (4 - part.road.priority) * 1.5;
       this.r.add({
         mesh: this.r.createMesh(part.geo),
@@ -253,8 +277,19 @@ export class World {
   // ЧТО ПОД КОЛЕСОМ. Возвращает в out: h — высота поверхности, surface — "road" | "shoulder" | "grass" | "gravel",
   // bridge/tunnel — на мосту ли / в тоннеле, road — какая дорога.
   // Если точка ближе (полуширина дороги + 1.45 м) к оси дороги — высота берётся с дороги, иначе с рельефа.
+  // У перекрёстков вместо этого работает поле перекрёстка (асфальт со скруглёнными углами).
   // Резкая смена между этими двумя высотами — частая причина «подлётов» на краю дороги.
   groundAt(x, z, out) {
+    // у перекрёстка: скруглённые углы и плавный переход высот (junctions.js)
+    const jn = this.roads.junctionAt(x, z);
+    if (jn && jn.F <= 1.45) {
+      out.h = jn.h;
+      out.surface = jn.F <= 0 ? "road" : "shoulder";
+      out.bridge = false;
+      out.tunnel = false;
+      out.road = jn.road;
+      return out;
+    }
     // рядом с дорогой (по быстрой сетке) ищем точную ближайшую точку дороги
     const road =
       !this.roads.edge || this.roads.edgeDist(x, z) < 4 ? this.roads.nearest(x, z, 30) : null;

@@ -91,6 +91,7 @@ __game.car.P.brake = 28      // тормоза (у первой машины 22)
 | Поведение всех машин (занос, прыжки) | `src/car/physics.js` |
 | Что под колесом (дорога / трава) | `src/world/world.js` → `groundAt` |
 | Форму дорог | `src/world/mapData.js` → `ROADS` |
+| Перекрёстки: скругление углов, зебра | `src/world/junctions.js` (числа в начале файла) |
 | Камеру | `src/camera/cameraRig.js` |
 | Заезды и время на медали | `src/race/events.js` |
 | Тексты меню | `src/ui/ui.js` |

@@ -5,6 +5,7 @@ import { RIDGE, ROADS } from "./mapData.js";
 import { MeshBuilder } from "../render/mesh.js";
 import { biomeAt } from "./biomes.js";
 import { baseHeight } from "./terrain.js";
+import { buildJunctions } from "./junctions.js";
 
 // Расстояние между соседними точками дороги после сглаживания, метров.
 const SAMPLE_STEP = 2;
@@ -222,6 +223,26 @@ export class RoadNetwork {
     }
     this.computeHeights(terrain);
     this.buildHash();
+    // плавные перекрёстки со скруглёнными углами (junctions.js)
+    buildJunctions(this);
+  }
+  // Поле перекрёстка в точке (x, z) или null, если точка не у перекрёстка. См. Junction.field в junctions.js.
+  // margin — насколько расширить зону перекрёстка (рельеф использует запас, чтобы плавно сойтись с дорогами).
+  junctionAt(x, z, margin = 0) {
+    const list = this.junctionShapes;
+    if (!list) {
+      return null;
+    }
+    for (let k = 0; k < list.length; k++) {
+      const j = list[k];
+      const dx = x - j.ox;
+      const dz = z - j.oz;
+      const r = j.reach + margin;
+      if (dx * dx + dz * dz < r * r) {
+        return j.field(x, z);
+      }
+    }
+    return null;
   }
   _at(road, i) {
     return road.closed ? ((i % road.n) + road.n) % road.n : clamp(i, 0, road.n - 1);
@@ -466,6 +487,32 @@ export class RoadNetwork {
         }
       }
     }
+    // у перекрёстков край дороги идёт по скруглению
+    for (const j of this.junctionShapes || []) {
+      const r = j.reach + maxD;
+      for (
+        let row = Math.max(0, Math.floor((j.oz - r + half) / step));
+        row <= Math.min(n - 1, Math.ceil((j.oz + r + half) / step));
+        row++
+      ) {
+        const z = -half + row * step;
+        for (
+          let col = Math.max(0, Math.floor((j.ox - r + half) / step));
+          col <= Math.min(n - 1, Math.ceil((j.ox + r + half) / step));
+          col++
+        ) {
+          const x = -half + col * step;
+          if (Math.hypot(x - j.ox, z - j.oz) > j.reach) {
+            continue;
+          }
+          const f = j.field(x, z);
+          const idx = row * n + col;
+          if (f && f.F < grid[idx]) {
+            grid[idx] = f.F;
+          }
+        }
+      }
+    }
     this.edge = {
       g: grid,
       n: n,
@@ -520,9 +567,10 @@ export class RoadNetwork {
     const t = [];
     for (const e of this.roads) {
       const s = e.n;
-      const o = e.closed ? s : s - 1;
+      // у примыкающих дорог начало/конец обрезаны: там лежит заплатка перекрёстка (junctions.js)
+      const o = e.meshTo ?? (e.closed ? s : s - 1);
       const i = 220;
-      for (let n = 0; n < o; n += i) {
+      for (let n = e.meshFrom || 0; n < o; n += i) {
         const a = new MeshBuilder();
         const r = new MeshBuilder();
         const c = Math.min(o, n + i);
@@ -591,6 +639,10 @@ export class RoadNetwork {
           radius: h.radius,
         });
       }
+    }
+    // заплатки перекрёстков
+    for (const j of this.junctionShapes || []) {
+      t.push(j.buildMeshes());
     }
     return t;
   }
