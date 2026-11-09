@@ -93,6 +93,15 @@ __game.car.P.brake = 28      // тормоза (у первой машины 22)
 | Форму дорог | `src/world/mapData.js` → `ROADS` |
 | Перекрёстки: скругление углов, зебра | `src/world/junctions.js` (числа в начале файла) |
 | Камеру | `src/camera/cameraRig.js` |
+| Камеру «У двери»: вынос, высота, место | `src/camera/cameraRig.js` → `DOOR_OUT`, `DOOR_H`, `DOOR_Z` |
+| Камеру «Вертолёт»: высота, зум, облёт | `src/camera/cameraRig.js` → `HELI` (новости) и `HELI_COURSE` (по курсу), в начале файла |
+| Окошко второго вида: размер и место | `src/game/game.js` → `pipRect` |
+| Цвета машин в гараже | `src/car/cars.js` → `PALETTE` |
+| Боты: сила, «резинка», решётка | `src/race/bots.js` → `BOT_LEVELS`, `BOT_TUNE` |
+| Ракета, нитро, банан, коробки, шкала | `src/race/items.js` → `ITEM_TUNE` |
+| Онлайн с друзьями | `src/net/net.js`, инструкция — `docs/MULTIPLAYER.md` |
+| Полигон: размер, где стоит, прямая, круги, слалом | `src/world/testGround.js` → `TEST_GROUND` |
+| Замеры на полигоне (0–100, 100–0, перегрузка) | `src/game/telemetry.js` |
 | Заезды и время на медали | `src/race/events.js` |
 | Тексты меню | `src/ui/ui.js` |
 

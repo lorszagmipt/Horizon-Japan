@@ -6,6 +6,7 @@ import { fbm2, ridged2, simplex2 } from "./noise.js";
 import { LAKES, RIDGE, RIVER, WORLD } from "./mapData.js";
 import { MeshBuilder } from "../render/mesh.js";
 import { biomeRaw, biomeTmp, sampleBiome } from "./biomes.js";
+import { TEST_GROUND, onTestPad, valleyMask } from "./testGround.js";
 
 const FUJI = WORLD.fuji;
 
@@ -52,6 +53,9 @@ function ridgeHeight(x, z) {
 
 // Исходная высота рельефа в точке (холмы, горы на краях, Фудзи) — до вдавливания озёр, реки и дорог.
 export function baseHeight(x, z) {
+  // долина полигона за южными горами (world/testGround.js): на дне — ровно
+  const valley = valleyMask(x, z);
+  if (valley >= 1) return TEST_GROUND.y;
   const wx = x + fbm2(x * 0.0013, z * 0.0013, 2) * 110;
   const wz = z + fbm2(x * 0.0013 + 5.3, z * 0.0013 - 2.7, 2) * 110;
   const [sakura, autumn] = biomeRaw(x, z);
@@ -81,6 +85,8 @@ export function baseHeight(x, z) {
     h += d;
   }
   h += ridgeHeight(x, z);
+  // склоны долины полигона плавно переходят в горы
+  if (valley > 0) h = lerp(h, TEST_GROUND.y, valley);
   return h;
 }
 
@@ -686,7 +692,8 @@ export class Terrain {
         S -= o;
       }
       const E = sampleBiome(v, g, biomeTmp);
-      const P = this.groundColor(
+      // под площадкой полигона вдали — цвет асфальта (вблизи её рисует свой меш с разметкой)
+      const P = onTestPad(v, g, 100) ? [0.24, 0.245, 0.27] : this.groundColor(
         v,
         g,
         S,

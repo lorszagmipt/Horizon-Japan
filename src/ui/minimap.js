@@ -137,13 +137,22 @@ export class Minimap {
     this.img = s;
     e.width = e.height = 300;
   }
+  // Своя картинка вместо карты мира (полигон): { img, half, cx, cz }; null — обычная карта.
+  setArea(area) {
+    this.area = area || null;
+  }
   draw(t, e, s) {
     const o = this.g;
     const i = this.c.width;
-    const a = i / (2 * 380);
-    const r = this.img.width / (MAP_HALF * 2);
+    const A = this.area;
+    const img = A ? A.img : this.img;
+    const half = A ? A.half : MAP_HALF;
+    const cx = A ? A.cx : 0;
+    const cz = A ? A.cz : 0;
+    const a = i / (2 * (A ? 700 : 380)); // на полигоне видно дальше
+    const r = img.width / (half * 2);
     o.save();
-    o.fillStyle = "#5b7b5a";
+    o.fillStyle = A ? "#6d6a5c" : "#5b7b5a";
     o.fillRect(0, 0, i, i);
     o.translate(i / 2, i / 2);
     const c = t.yaw;
@@ -151,11 +160,11 @@ export class Minimap {
     o.rotate(u);
     const h = a / r;
     o.drawImage(
-      this.img,
-      -(t.pos[0] + MAP_HALF) * r * h,
-      -(t.pos[2] + MAP_HALF) * r * h,
-      this.img.width * h,
-      this.img.height * h,
+      img,
+      -(t.pos[0] - cx + half) * r * h,
+      -(t.pos[2] - cz + half) * r * h,
+      img.width * h,
+      img.height * h,
     );
     for (const l of e) {
       const m = (l.x - t.pos[0]) * a;

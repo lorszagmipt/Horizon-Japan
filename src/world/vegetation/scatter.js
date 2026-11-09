@@ -699,6 +699,10 @@ export class Vegetation {
         if (w.collider) {
           this.world.colliders.addCircle(S[0], S[2], w.collider * S[4], S[1] - 2, S[1] + 6);
         }
+        if (w.kind === "tree" && w.far) {
+          // крона: для камеры «Вертолёт», чтобы понимать, что машину закрыло деревом
+          this.world.addCanopy(S[0], S[2], w.far.w * 0.5 * S[4], S[1] + w.far.h * 0.3 * S[4], S[1] + w.far.h * S[4]);
+        }
         const E = clamp(Math.floor((S[0] + s) / o), 0, n - 1);
         const F = clamp(Math.floor((S[2] + s) / o), 0, n - 1) * n + E;
         if (!T.has(F)) {

@@ -53,6 +53,7 @@ async function main() {
     world: world,
     input: input,
     settings: settings,
+    noSave: TEST_MODE, // в тестовом режиме место на карте не сохраняется
   });
   game.fx = new Effects(renderer, world, settings.graphics.particles);
   game.events = new RaceManager(game);

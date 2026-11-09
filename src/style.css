@@ -79,11 +79,12 @@ input[type=range] { width: 220px; accent-color: var(--pink); }
 .garage-info .name { font-size: 46px; font-weight: 800; font-style: italic; letter-spacing: .04em; margin: 10px 0 2px; }
 .garage-info .cls { color: var(--gold); letter-spacing: .08em; }
 .garage-info p { color: var(--muted); font-size: 14px; line-height: 1.45; }
-.stat { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: 10px; margin: 7px 0; font-size: 14px; }
+.stat { display: grid; grid-template-columns: 150px 1fr 84px; align-items: center; gap: 10px; margin: 7px 0; font-size: 14px; }
 .stat .barbg { height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
 .stat .bar { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--sky), var(--pink)); transition: width .4s; }
-.swatches { display: flex; gap: 10px; margin: 14px 0 4px; }
-.swatch { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); cursor: pointer; transition: transform .15s; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; max-height: 132px; overflow-y: auto; padding: 4px; }
+.stat .val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.swatch { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); cursor: pointer; transition: transform .15s; }
 .swatch.on { border-color: #fff; transform: scale(1.15); box-shadow: 0 0 0 3px var(--pink); }
 .garage-nav { position: absolute; right: 4vw; bottom: 6vh; display: flex; gap: 10px; flex-direction: column; align-items: flex-end; }
 .garage-arrows { position: absolute; top: 50%; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 3vw; pointer-events: none; }
@@ -164,3 +165,89 @@ input[type=range] { width: 220px; accent-color: var(--pink); }
 
 .fatal { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #1a1830; }
 @media (max-width: 760px) { .speedo { transform: scale(.75); transform-origin: right bottom; } .minimap { width: 150px; height: 150px; } .compass { width: 280px; } .keys { display: none; } }
+
+/* Камера «Вертолёт»: плашка прямого эфира, как в новостях */
+.heli-tag { position: absolute; top: 74px; left: 24px; display: flex; align-items: center; gap: 8px;
+  font: 700 15px/1 system-ui, sans-serif; color: #fff; letter-spacing: 1px; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.heli-tag .rec { color: #ff3030; animation: heli-blink 1s steps(2) infinite; }
+.heli-tag .ch { background: rgba(0,0,0,.45); padding: 4px 8px; border-radius: 3px; font-weight: 600; }
+.heli-tag .clock { font-variant-numeric: tabular-nums; font-weight: 600; opacity: .9; }
+@keyframes heli-blink { 50% { opacity: 0; } }
+
+/* Окошко второго вида (справа снизу) */
+#pipframe { position: fixed; z-index: 5; pointer-events: none; border: 2px solid rgba(255,255,255,.85);
+  border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+#pipframe .pip-label { position: absolute; left: 8px; top: 6px; font: 700 12px/1 system-ui, sans-serif;
+  letter-spacing: 1px; color: #fff; text-transform: uppercase; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+
+/* Место в гонке (с ботами) */
+.evhud .place { font: 800 34px/1 system-ui, sans-serif; margin: 4px 0 2px; color: #fff; }
+.evhud .place span { font-size: 18px; opacity: .7; margin-left: 2px; }
+.results .place-big { margin-top: 12px; font-weight: 800; font-size: 20px; letter-spacing: .08em; color: #ffd23f; }
+.results table.standings tr.me td { color: #ffd23f; font-weight: 700; }
+/* Имена над машинами */
+#nametags { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+#nametags .tag { position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+  font: 700 12px/1 system-ui, sans-serif; color: #fff; padding: 3px 7px 3px 5px; border-radius: 10px;
+  background: rgba(15,18,30,.55); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+#nametags .tag i { display: inline-block; font-style: normal; min-width: 16px; margin-right: 5px; padding: 1px 4px;
+  border-radius: 7px; text-align: center; color: #111; }
+
+/* Ячейка способности (ракета / нитро / банан) */
+.itemslot { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); margin-top: 52px;
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 16px;
+  background: rgba(15,18,30,.55); color: #fff; font: 600 14px/1.2 system-ui, sans-serif; }
+.itemslot .ic { width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center;
+  font-size: 30px; background: rgba(255,255,255,.08); border: 2px dashed rgba(255,255,255,.3); color: rgba(255,255,255,.5); }
+.itemslot .ic.full { border: 2px solid #ffd23f; background: rgba(255,210,63,.18); color: #fff; animation: item-pop .35s ease-out; }
+.itemslot .k { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 6px; background: #fff; color: #111; font-weight: 800; }
+.itemslot .meter { width: 120px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.15); overflow: hidden; }
+.itemslot .meter i { display: block; height: 100%; background: linear-gradient(90deg, #36c6c0, #ffd23f); }
+.itemslot .choices { display: flex; gap: 8px; opacity: .45; }
+.itemslot .choices.full { opacity: 1; }
+.itemslot .choices span { font-size: 22px; display: flex; align-items: center; gap: 3px; }
+.itemslot .choices b { font-size: 11px; padding: 1px 5px; border-radius: 5px; background: #fff; color: #111; }
+.itemslot .choices.full span { animation: item-pop .5s ease-out infinite alternate; }
+@keyframes item-pop { from { transform: scale(1); } to { transform: scale(1.12); } }
+
+/* Играть с друзьями */
+.online .room-code { display: flex; align-items: center; gap: 14px; margin: 10px 0 6px; }
+.online .room-code span { opacity: .7; letter-spacing: .15em; text-transform: uppercase; font-size: 12px; }
+.online .room-code b { font-size: 40px; letter-spacing: .25em; font-weight: 900; color: #ffd23f; }
+.online table.players { width: 100%; margin: 12px 0; border-collapse: collapse; }
+.online table.players td { padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.online table.players tr.me td { color: #ffd23f; font-weight: 700; }
+.online .dotc { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+.online .online-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+.online .panel-sub { background: rgba(255,255,255,.05); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.online .panel-sub h3 { margin: 0; font-size: 16px; }
+.online input { font: 600 18px/1.2 system-ui, sans-serif; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.25); color: #fff; width: 100%; box-sizing: border-box; }
+.online .row input { width: 220px; }
+.netbadge { position: fixed; top: 112px; right: 22px; z-index: 6; font: 700 12px/1 system-ui, sans-serif; letter-spacing: .08em;
+  color: #fff; background: rgba(15,18,30,.6); padding: 6px 10px; border-radius: 10px; pointer-events: none; }
+.netbadge .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3ddc84; margin-right: 6px; }
+@media (max-width: 640px) { .online .online-cols { grid-template-columns: 1fr; } }
+
+/* Полигон: панель замеров (ui.js → updateTelemetry) */
+.telem { position: absolute; left: 2.2vw; top: 2.2vh; padding: 12px 16px; width: 270px; font-size: 13px; }
+.telem .t1 { font-size: 11px; letter-spacing: .25em; color: var(--gold); }
+.telem .t2 { font-size: 17px; font-weight: 700; margin: 2px 0 6px; }
+.telem .tl { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+.telem .tl span { color: var(--muted); }
+.telem .tl b { font-size: 16px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.telem .tl i { grid-column: 1 / 3; font-style: normal; font-size: 11px; color: rgba(255,255,255,.55); text-align: right; margin-top: -1px; }
+.telem .tl i:empty { display: none; }
+.telem .tl.live b, .telem .tl.live i { color: #6fd3ff; }
+.telem .ref { margin-top: 8px; font-size: 11px; color: #ffd23f; opacity: .9; }
+.telem .hint { margin-top: 4px; font-size: 11px; color: rgba(255,255,255,.55); line-height: 1.35; }
+.telem:not(.hidden) ~ .heli-tag { left: calc(2.2vw + 296px); top: 2.2vh; }
+/* Меню на невысоком экране (ноутбук): кнопки компактнее, список прокручивается */
+.menu-list { min-height: 0; overflow-y: auto; padding-right: 12px; scrollbar-width: none; }
+.menu-list::-webkit-scrollbar { display: none; }
+@media (max-height: 860px) {
+  .menu-left { top: 5vh; bottom: 4vh; gap: 2vh; }
+  .menu-list { gap: 7px; margin-top: 1vh; }
+  .menu-list .btn { padding: 9px 18px; }
+  .menu-list .btn .ico { width: 28px; height: 28px; font-size: 16px; }
+}

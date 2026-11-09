@@ -689,15 +689,26 @@ export class Renderer {
     const i = !!e.reflection;
     let n;
     let a;
+    // e.viewport = [x, y, w, h] — рисовать только в прямоугольник экрана (окошко второго вида)
+    const vp = e.viewport || null;
     if (o) {
       n = o.w;
       a = o.h;
+    } else if (vp) {
+      n = vp[2];
+      a = vp[3];
     } else {
       [n, a] = this.resize();
     }
     t.aspect = n / a;
     s.bindFramebuffer(s.FRAMEBUFFER, o ? o.fb : null);
-    s.viewport(0, 0, n, a);
+    if (vp) {
+      s.viewport(vp[0], vp[1], vp[2], vp[3]);
+      s.enable(s.SCISSOR_TEST);
+      s.scissor(vp[0], vp[1], vp[2], vp[3]);
+    } else {
+      s.viewport(0, 0, n, a);
+    }
     this._resetState();
     s.depthMask(true);
     s.clearColor(0.6, 0.75, 0.9, 1);
@@ -778,6 +789,9 @@ export class Renderer {
     s.depthMask(true);
     s.disable(s.BLEND);
     s.disable(s.POLYGON_OFFSET_FILL);
+    if (vp) {
+      s.disable(s.SCISSOR_TEST);
+    }
     s.bindFramebuffer(s.FRAMEBUFFER, null);
     this._resetState();
   }

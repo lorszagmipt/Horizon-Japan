@@ -43,6 +43,22 @@ export const ACTIONS = [
     name: "Смотреть назад",
   },
   {
+    id: "item",
+    name: "Способность (коробки)",
+  },
+  {
+    id: "item1",
+    name: "Ракета (шкала)",
+  },
+  {
+    id: "item2",
+    name: "Нитро (шкала)",
+  },
+  {
+    id: "item3",
+    name: "Банан (шкала)",
+  },
+  {
     id: "pause",
     name: "Пауза",
   },
@@ -66,6 +82,10 @@ export const DEFAULT_BINDINGS = {
   lookBack: ["KeyQ"],
   pause: ["Escape", "KeyP"],
   hud: ["KeyH"],
+  item: ["KeyF"],
+  item1: ["Digit1"],
+  item2: ["Digit2"],
+  item3: ["Digit3"],
 };
 
 export function keyLabel(code) {
@@ -176,6 +196,10 @@ export class Input {
         1: "respawn",
         8: "hud",
         4: "lookBack",
+        13: "item", // крестовина вниз — способность
+        14: "item1", // крестовина влево — ракета (шкала)
+        12: "item2", // вверх — нитро (шкала)
+        15: "item3", // вправо — банан (шкала)
       };
       for (const btn in BUTTONS) {
         const b = pad.buttons[btn];

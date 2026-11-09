@@ -1,5 +1,7 @@
 // Шейдеры (программы для видеокарты) на языке GLSL. Здесь описан внешний вид: освещение, туман, трава, дорожная разметка, вода, небо.
 
+import { PAD_GLSL, PAD_GLSL_FUNCS } from "../world/testGround.js";
+
 const GLSL_COMMON = `
 uniform vec3 u_sunDir;
 uniform vec3 u_sunColor;
@@ -182,6 +184,10 @@ uniform sampler2D u_tex;
 #endif
 out vec4 fragColor;
 
+#ifdef PAD
+${PAD_GLSL_FUNCS}
+#endif
+
 void main() {
 #ifdef CLIP
   if (v_wpos.y < u_clipY) discard;
@@ -285,21 +291,26 @@ void main() {
     float hw = v_ext.z;
     float lane = v_ext.w;
     float as = abs(s);
-    float aa = max(fwidth(s), 0.02) * 1.2;
+    // e — расстояние до края асфальта (< 0 — асфальт). У перекрёстков край ближе к оси на поправку,
+    // которая приходит в альфе цвета вершины (0…1 → 0…-12 м, см. DELTA_RANGE в world/junctions.js)
+    float e = as - hw - v_col.a * 12.0;
+    float aa = max(fwidth(e), 0.02) * 1.2;
+    // въезд перекрёстка (lane 5): потёртость полос плавно появляется к концу въезда (её сила — в vv)
+    float wearK = lane > 4.5 ? clamp(vv, 0.0, 1.0) : 1.0;
     float n1 = vnoise(wxz * 0.9);
     float n2 = vnoise(wxz * 0.11);
     vec3 asphalt = vec3(0.25, 0.255, 0.285) * (0.9 + n1 * 0.10 + n2 * 0.12);
     // светлая колея посередине полос
-    asphalt *= 1.0 + 0.05 * smoothstep(0.3, 0.0, abs(fract(as / max(hw * 0.5, 1.0)) - 0.5) - 0.2);
+    asphalt *= 1.0 + 0.05 * wearK * smoothstep(0.3, 0.0, abs(fract(as / max(hw * 0.5, 1.0)) - 0.5) - 0.2);
     vec3 shoulder = vec3(0.56, 0.52, 0.46) * (0.85 + n1 * 0.2);
-    vec3 col = mix(asphalt, shoulder, smoothstep(hw - aa, hw + aa, as));
+    vec3 col = mix(asphalt, shoulder, smoothstep(-aa, aa, e));
     vec3 white = vec3(0.93, 0.93, 0.90);
     vec3 yellow = vec3(0.98, 0.76, 0.18);
     float m = 0.0;
     // боковые линии (с разрывом на примыканиях других дорог)
     float ecode = floor(v_col.b * 3.0 + 0.5);
     float noEdge = (s > 0.0) ? mod(ecode, 2.0) : step(1.5, ecode);
-    m = max(m, smoothstep(aa, 0.0, abs(as - (hw - 0.45)) - 0.11) * (1.0 - noEdge));
+    m = max(m, smoothstep(aa, 0.0, abs(e + 0.45) - 0.11) * (1.0 - noEdge));
     vec3 mcol = white;
     if (lane < 1.5) {
       // двухполосная дорога: прерывистая осевая
@@ -313,15 +324,16 @@ void main() {
       m = max(m, smoothstep(aa, 0.0, abs(as - hw * 0.52) - 0.07) * dash);
     } else if (lane < 3.5) {
       // деревенская дорога — только бордюрные полосы
-    } else {
+    } else if (lane < 4.5) {
       // горный серпантин: сплошная жёлтая осевая
       float dy = smoothstep(aa, 0.0, as - 0.09);
       if (dy > m) { mcol = yellow; m = dy; }
     }
-    m *= 0.92 * (0.85 + 0.15 * n1) * (1.0 - smoothstep(hw, hw + 0.05, as));
+    // (lane 5 — въезд перекрёстка: только линия по краю)
+    m *= 0.92 * (0.85 + 0.15 * n1) * (1.0 - smoothstep(0.0, 0.05, e));
     col = mix(col, mcol, m);
     // лепестки сакуры и опавшие листья на асфальте (гуще у обочин)
-    float edge = 0.15 + 0.85 * smoothstep(hw * 0.2, hw + 0.5, as);
+    float edge = 0.15 + 0.85 * smoothstep(-hw * 0.8, 0.5, e);
     float petals = 0.0, leaves = 0.0;
     vec3 leafCol = vec3(0.0);
     if (v_col.r > 0.01) {
@@ -353,6 +365,11 @@ void main() {
     albedo = col * u_color;
     gloss = 0.08 * (1.0 - petals) * (1.0 - leaves);
   }
+#endif
+
+#ifdef PAD
+  // площадка полигона: асфальт, сетка и разметка (world/testGround.js)
+${PAD_GLSL}
 #endif
 
 #ifdef TEXTURED

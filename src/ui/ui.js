@@ -5,10 +5,15 @@ import { BIOMES, LANDMARKS, WORLD } from "../world/mapData.js";
 import { biomeAt } from "../world/biomes.js";
 import { ACTIONS, DEFAULT_BINDINGS, keyLabel } from "../input/input.js";
 import { GRAPHICS_PRESETS, saveSettings } from "../game/settings.js";
-import { CARS } from "../car/cars.js";
+import { CARS, carNumbers } from "../car/cars.js";
 import { CAMERA_MODES } from "../camera/cameraRig.js";
 import { EVENTS, EVENT_TYPES, formatTime } from "../race/events.js";
+import { ITEM_TYPES, ITEM_ORDER } from "../race/items.js";
+
+// Значок лучшей медали в списке заездов.
+const MEDAL_ICON = { gold: "🥇 ", silver: "🥈 ", bronze: "🥉 " };
 import { Compass, Minimap, drawMapImage } from "./minimap.js";
+import { drawTestGroundImage } from "../world/testGround.js";
 
 const el = (tag, cls, html) => {
   const node = document.createElement(tag);
@@ -66,7 +71,10 @@ export class UI {
       <div class="banner" id="banner"><div class="b1" id="b1"></div><div class="b2" id="b2"></div><div class="b3" id="b3"></div></div>
       <div class="prompt hidden" id="prompt"></div>
       <div class="keys" id="keys"></div>
-      <div class="panel evhud hidden" id="evhud"><div class="t1" id="evtype"></div><div class="t2" id="evname"></div><div class="time" id="evtime">0:00.00</div><div class="line"><span id="evcp"></span><span id="evbest"></span></div></div>
+      <div class="itemslot hidden" id="itemslot"></div>
+      <div class="panel telem hidden" id="telem"></div>
+      <div class="heli-tag hidden" id="helitag"><span class="rec">●</span> ЭФИР <span class="ch">ВЕРТОЛЁТ 7</span><span class="clock" id="heliclock"></span></div>
+      <div class="panel evhud hidden" id="evhud"><div class="t1" id="evtype"></div><div class="t2" id="evname"></div><div class="time" id="evtime">0:00.00</div><div class="place hidden" id="evplace"></div><div class="line"><span id="evcp"></span><span id="evbest"></span></div></div>
       <div class="countdown hidden" id="countdown"></div>
       <div class="fps hidden" id="fps"></div>
       <div class="toast" id="toast"></div>`;
@@ -77,7 +85,7 @@ export class UI {
     this.fadeEl = el("div", "fade");
     document.body.appendChild(this.fadeEl);
     this.screens = {};
-    for (const s of ["menu", "events", "garage", "settings", "pause", "map", "results", "help"]) {
+    for (const s of ["menu", "events", "garage", "settings", "pause", "map", "results", "help", "online"]) {
       const o = el("div", "screen hidden");
       o.dataset.name = s;
       t.appendChild(o);
@@ -147,7 +155,11 @@ export class UI {
       : [];
   }
   updateFocus() {
-    this.focusables().forEach((e, s) => e.classList.toggle("focus", s === this.focusIdx));
+    this.focusables().forEach((e, s) => {
+      e.classList.toggle("focus", s === this.focusIdx);
+      // на невысоком экране список прокручивается — выбранную кнопку держим в видимой части
+      if (s === this.focusIdx && e.scrollIntoView) e.scrollIntoView({ block: "nearest" });
+    });
   }
   buildMenu() {
     const t = this.screens.menu;
@@ -156,7 +168,9 @@ export class UI {
         <div class="logo"><div class="l1">HORIZON</div><div class="l2"><span class="dot"></span>JAPAN</div><div class="l3">PAINTED ROADS</div><div class="brush"></div></div>
         <div class="menu-list">
           <div class="btn" data-act="free"><div class="ico">\u{1F697}</div><div>Свободная езда<small>Открытый мир: сакура, клёны и Фудзи</small></div></div>
+          <div class="btn" data-act="polygon"><div class="ico">\u{1F4CF}</div><div>Полигон<small>Площадка 4 × 4 км за горами: разгон, тормоза, дрифт</small></div></div>
           <div class="btn" data-act="events"><div class="ico">\u{1F3C1}</div><div>Заезды<small>Спринты, кольца и дрифт-зона</small></div></div>
+          <div class="btn" data-act="online"><div class="ico">\u{1F310}</div><div>Играть с друзьями<small>Комната по коду: катайтесь и гоняйтесь вместе</small></div></div>
           <div class="btn" data-act="garage"><div class="ico">\u{1F527}</div><div>Гараж<small>Выбор автомобиля и цвета</small></div></div>
           <div class="btn" data-act="settings"><div class="ico">⚙</div><div>Настройки<small>Графика, управление, звук, клавиши</small></div></div>
           <div class="btn" data-act="help"><div class="ico">?</div><div>Как играть<small>Управление и советы</small></div></div>
@@ -174,10 +188,14 @@ export class UI {
     }
     if (t === "free") {
       this.startFreeRoam();
+    } else if (t === "polygon") {
+      this.startTestGround();
     } else if (t === "events") {
       this.openEvents();
     } else if (t === "garage") {
       this.openGarage();
+    } else if (t === "online") {
+      this.openOnline();
     } else if (t === "settings") {
       this.openSettings();
     } else if (t === "help") {
@@ -193,12 +211,31 @@ export class UI {
       if (!t) {
         e.placeAtSpawn();
       }
+      e.car.boost = 1; // в начале свободной езды шкала ускорения полная
       e.state = "drive";
       e.rig.snap = true;
       this.hideScreens();
       this.initMaps();
       this.showBanner("СВОБОДНАЯ ЕЗДА", "Добро пожаловать!", "#ff5c8a");
       this.regionId = null;
+    });
+  }
+  // ПОЛИГОН: машина — на линию старта площадки за горами (world/testGround.js)
+  startTestGround() {
+    const e = this.game;
+    this.fade(() => {
+      if (e.events) {
+        e.events.cancel();
+      }
+      e.rememberSpot(); // запомнить место на карте — «Покинуть полигон» вернёт сюда
+      e.placeAtTestGround();
+      e.car.boost = 1;
+      e.state = "drive";
+      this.hideScreens();
+      this.initMaps();
+      this.showBanner("TEST TRACK", "Полигон", "#ffd23f");
+      this.regionId = null;
+      if (e.audio) e.audio.setPaused(false);
     });
   }
   menuShots() {
@@ -367,8 +404,9 @@ export class UI {
     const o = this.screens.garage;
     const i = e.stats;
     const n = e.phys;
+    const num = carNumbers(e);
     const a = (r, c, u) =>
-      `<div class="stat"><span>${r}</span><div class="barbg"><div class="bar" style="width:${Math.round(c * 100)}%"></div></div><span>${u}</span></div>`;
+      `<div class="stat"><span>${r}</span><div class="barbg"><div class="bar" style="width:${Math.round(c * 100)}%"></div></div><span class="val">${u}</span></div>`;
     o.innerHTML = `
       <div class="garage-count">ГАРАЖ · ${this.garageIdx + 1} / ${CARS.length}</div>
       <div class="garage-arrows"><button data-g="prev">‹</button><button data-g="next">›</button></div>
@@ -377,11 +415,12 @@ export class UI {
         <div class="name">${e.name}</div>
         <div class="cls">${e.cls}</div>
         <p>${e.desc}</p>
-        ${a("Скорость", i.speed, Math.round(n.vmax * 3.6 * 0.86))}
-        ${a("Разгон", i.accel, "")}
-        ${a("Управляемость", i.handling, "")}
-        ${a("Дрифт", i.drift, "")}
-        <div class="note">${n.awd ? "Полный привод" : "Задний привод"} · ${Math.round(n.mass)} кг</div>
+        ${a("Макс. скорость", i.speed, t.settings.units === "mph" ? Math.round(num.top / 1.609) + " mph" : num.top + " км/ч")}
+        ${a("Разгон 0–100", i.accel, num.t100 == null ? "—" : num.t100.toFixed(1).replace(".", ",") + " с")}
+        ${a("Сцепление", i.handling, num.latG.toFixed(2).replace(".", ",") + " g")}
+        ${a("Тормоз 100–0", clamp(n.brake / 30, 0, 1), num.brake100 + " м")}
+        ${a("Дрифт", i.drift, Math.round(i.drift * 100) + " / 100")}
+        <div class="note">${n.awd ? "Полный привод" : "Задний привод"} · ${Math.round(n.mass)} кг · цвет ${s + 1} из ${e.colors.length}</div>
         <div class="swatches">${e.colors.map((r, c) => `<div class="swatch ${c === s ? "on" : ""}" data-c="${c}" style="background:${cssColor(r)}"></div>`).join("")}</div>
       </div>
       <div class="garage-nav">
@@ -392,9 +431,14 @@ export class UI {
     o.querySelector("[data-g=next]").onclick = () => this.garageStep(1);
     o.querySelectorAll(".swatch").forEach((r) => {
       r.onclick = () => {
-        t.settings.colors[e.id] = +r.dataset.c;
+        // меняем цвет без перерисовки панели, чтобы список цветов не прокручивался в начало
+        const c = +r.dataset.c;
+        t.settings.colors[e.id] = c;
         saveSettings(t.settings);
-        this.renderGarage();
+        t.carView.setColor(e.colors[c]);
+        o.querySelectorAll(".swatch").forEach((w) => w.classList.toggle("on", w === r));
+        const note = o.querySelector(".garage-info .note");
+        if (note) note.textContent = note.textContent.replace(/цвет \d+/, "цвет " + (c + 1));
       };
     });
     o.querySelector("[data-act=choose]").onclick = () => this.garageChoose();
@@ -434,7 +478,7 @@ export class UI {
         const n = ((e.paths[o.id].length * (o.laps || 1)) / 1000).toFixed(1);
         return `<div class="ev" data-ev="${o.id}"><div class="stripe" style="background:${o.color}"></div><span class="type" style="background:${o.color}">${EVENT_TYPES[o.type]}</span>
           <div class="title">${o.name}</div><div class="meta">${o.region} · ${n} км${o.laps ? " · кругов: " + o.laps : ""}<br>${o.desc}</div>
-          <div class="best">Рекорд: ${i == null ? "—" : o.type === "drift" ? i.toLocaleString("ru") + " очков" : formatTime(i)}</div></div>`;
+          <div class="best">${MEDAL_ICON[e.best[o.id] && e.best[o.id].medal] || ""}Рекорд: ${i == null ? "—" : o.type === "drift" ? i.toLocaleString("ru") + " очков" : formatTime(i)}</div></div>`;
       }).join("")}</div>
       <div class="foot-btns"><div class="btn small ghost" data-act="back">← Назад</div></div></div>`;
     s.querySelectorAll(".ev").forEach((o) => {
@@ -463,9 +507,36 @@ export class UI {
   }
   onEventEnd() {
     this.$("evhud").classList.add("hidden");
+    this.$("itemslot").classList.add("hidden");
     this.$("countdown").classList.add("hidden");
     this.hideScreens();
     this.game.state = "drive";
+  }
+  // ЯЧЕЙКА СПОСОБНОСТИ: что в руках (коробки) или шкала с тремя вариантами (шкала).
+  updateItemSlot(c) {
+    const el = this.$("itemslot");
+    const items = c.items;
+    if (!items) {
+      el.classList.add("hidden");
+      return;
+    }
+    el.classList.remove("hidden");
+    const me = c.playerRacer();
+    const key = (a) => keyLabel((this.game.settings.bindings[a] || [])[0]);
+    let html;
+    if (items.mode === "boxes") {
+      const it = me.item ? ITEM_TYPES[me.item] : null;
+      html = `<div class="ic ${it ? "full" : ""}">${it ? it.icon : "?"}</div><div class="lbl">${it ? it.name + ` <span class="k">${key("item")}</span>` : "Коробки «?» на трассе"}</div>`;
+    } else {
+      const full = (me.meter || 0) >= 1;
+      html = `<div class="meter"><i style="width:${Math.round((me.meter || 0) * 100)}%"></i></div><div class="choices ${full ? "full" : ""}">${ITEM_ORDER.map(
+        (k, n) => `<span>${ITEM_TYPES[k].icon}<b>${key("item" + (n + 1))}</b></span>`,
+      ).join("")}</div>`;
+    }
+    if (el._html !== html) {
+      el.innerHTML = html;
+      el._html = html;
+    }
   }
   flashCheckpoint(t) {
     this.toast(
@@ -496,7 +567,16 @@ export class UI {
       ${t.newBest ? '<div style="margin-top:12px;color:#ffd23f;font-weight:700;letter-spacing:.15em">НОВЫЙ РЕКОРД!</div>' : ""}
       <div class="note" style="margin-top:10px">Лучший в этой сессии: ${i(t.session)} · Рекорд: ${i(t.best)}<br>
       Медали: золото ${i(t.ref[0])} · серебро ${i(t.ref[1])} · бронза ${i(t.ref[2])}</div>
-      <table>${n}</table>
+      ${
+        t.standings
+          ? `<div class="place-big">${t.place} место из ${t.standings.length}</div><table class="standings">${t.standings
+              .map(
+                (a, r) =>
+                  `<tr class="${a.me ? "me" : ""}"><td>${r + 1}.</td><td>${a.me ? "Вы" : a.name}</td><td>${a.car}</td><td>${a.time != null ? formatTime(a.time) : "−" + Math.round(a.behind) + " м"}</td></tr>`,
+              )
+              .join("")}</table>`
+          : `<table>${n}</table>`
+      }
       <div class="foot-btns" style="justify-content:center"><div class="btn small" data-act="retry">↻ Повторить</div><div class="btn small ghost" data-act="cont">Продолжить езду</div></div></div>`;
     e.querySelector("[data-act=retry]").onclick = () =>
       this.fade(() => {
@@ -507,6 +587,7 @@ export class UI {
       this.game.events.closeResults(false);
     };
     this.$("evhud").classList.add("hidden");
+    this.$("itemslot").classList.add("hidden");
     this.show("results");
     this.game.state = "results";
   }
@@ -514,14 +595,17 @@ export class UI {
     const t = this.game;
     t.state = "paused";
     const e = t.events && t.events.active;
+    const poly = !e && t.onPolygon();
     const s = this.screens.pause;
     s.innerHTML = `<div class="menu-shade"></div><div class="menu-left">
-      <div class="logo"><div class="l1" style="font-size:56px">ПАУЗА</div><div class="l3">${e ? t.events.active.def.name : "СВОБОДНАЯ ЕЗДА"}</div></div>
+      <div class="logo"><div class="l1" style="font-size:56px">ПАУЗА</div><div class="l3">${e ? t.events.active.def.name : poly ? "ПОЛИГОН" : "СВОБОДНАЯ ЕЗДА"}</div></div>
       <div class="menu-list">
         <div class="btn" data-act="resume"><div class="ico">▶</div><div>Продолжить</div></div>
         ${e ? '<div class="btn" data-act="restart"><div class="ico">↻</div><div>Начать заезд заново</div></div><div class="btn" data-act="quitev"><div class="ico">✕</div><div>Покинуть заезд</div></div>' : ""}
-        <div class="btn" data-act="respawn"><div class="ico">⟲</div><div>Вернуться на дорогу</div></div>
-        <div class="btn" data-act="map"><div class="ico">\u{1F5FA}</div><div>Карта мира</div></div>
+        <div class="btn" data-act="respawn"><div class="ico">⟲</div><div>${poly ? "На старт полигона" : "Вернуться на дорогу"}</div></div>
+        ${poly ? '<div class="btn" data-act="telemreset"><div class="ico">⏱</div><div>Сбросить замеры</div></div><div class="btn" data-act="leavepoly"><div class="ico">\u{1F697}</div><div>Покинуть полигон</div></div>' : e ? "" : '<div class="btn" data-act="polygon"><div class="ico">\u{1F4CF}</div><div>Полигон</div></div>'}
+        ${poly ? "" : '<div class="btn" data-act="map"><div class="ico">\u{1F5FA}</div><div>Карта мира</div></div>'}
+        <div class="btn" data-act="online"><div class="ico">\u{1F310}</div><div>Играть с друзьями</div></div>
         ${e ? "" : '<div class="btn" data-act="events"><div class="ico">🏁</div><div>Заезды</div></div><div class="btn" data-act="garage"><div class="ico">🔧</div><div>Гараж</div></div>'}
         <div class="btn" data-act="settings"><div class="ico">⚙</div><div>Настройки</div></div>
         <div class="btn" data-act="menu"><div class="ico">⌂</div><div>Главное меню</div></div>
@@ -552,8 +636,20 @@ export class UI {
       } else {
         e.respawn();
       }
+    } else if (t === "polygon") {
+      this.startTestGround();
+    } else if (t === "telemreset") {
+      e.telemetry.reset();
+      e.telemetry.carId = e.settings.car;
+      this.resume();
+      this.toast("Замеры сброшены");
+    } else if (t === "leavepoly") {
+      this.startFreeRoam();
+      if (e.audio) e.audio.setPaused(false);
     } else if (t === "map") {
       this.openMap();
+    } else if (t === "online") {
+      this.openOnline(true);
     } else if (t === "events") {
       this.openEvents(true);
     } else if (t === "garage") {
@@ -584,6 +680,135 @@ export class UI {
         t.audio.setPaused(false);
       }
     });
+  }
+  // ЭКРАН «ИГРАТЬ С ДРУЗЬЯМИ»: создать комнату / войти по коду / кто в комнате.
+  openOnline(fromPause) {
+    if (fromPause !== undefined) this.onlineFromPause = !!fromPause;
+    const g = this.game;
+    const net = g.net;
+    const o = this.screens.online;
+    net.onChange = () => {
+      if (this.screen === "online") this.openOnline();
+      this.updateNetBadge();
+    };
+    net.onMessage = (text) => this.toast(text);
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const local = location.search.includes("netlocal");
+    let body;
+    if (net.status === "online") {
+      const list = [...net.players.values()]
+        .map((p) => {
+          const spec = CARS.find((c) => c.id === p.car);
+          const me = p.id === net.myId;
+          return `<tr class="${me ? "me" : ""}"><td><span class="dotc" style="background:#${(p.color >>> 0).toString(16).padStart(6, "0")}"></span>${esc(p.name)}${me ? " (вы)" : ""}${p.id === "h" ? " 👑" : ""}</td><td>${spec ? spec.name : ""}</td></tr>`;
+        })
+        .join("");
+      body = `
+        <div class="room-code"><span>Код комнаты</span><b>${net.code}</b><div class="btn small ghost" data-act="copy">Скопировать</div></div>
+        <div class="note">${net.isHost ? "Вы — хозяин комнаты. Отправьте код друзьям. Заезд выбираете вы: «Заезды» — и все поедут вместе (боты тоже, если включены)." : "Вы в комнате. Заезд выбирает хозяин комнаты 👑 — когда он начнёт, вас перенесёт на старт."}</div>
+        <table class="players">${list}</table>
+        <div class="foot-btns">
+          <div class="btn small" data-act="drive">🚗 Поехать</div>
+          ${net.isHost ? '<div class="btn small" data-act="events">🏁 Заезды</div>' : ""}
+          <div class="btn small ghost" data-act="leave">Выйти из комнаты</div>
+          <div class="btn small ghost" data-act="back">← Назад</div>
+        </div>`;
+    } else {
+      const busy = net.status === "connecting";
+      body = `
+        <div class="row"><label>Ваше имя</label><input id="netname" maxlength="16" value="${esc(g.settings.netName || "")}" placeholder="Игрок"></div>
+        <div class="online-cols">
+          <div class="panel-sub"><h3>Создать комнату</h3><div class="note">Получите код и отправьте его друзьям (до 8 игроков).</div>
+            <div class="btn small" data-act="host">${busy ? "Подключаемся…" : "Создать"}</div></div>
+          <div class="panel-sub"><h3>Войти по коду</h3><div class="note">Введите код, который прислал друг.</div>
+            <input id="netcode" maxlength="5" placeholder="ABCDE" style="text-transform:uppercase">
+            <div class="btn small" data-act="join">${busy ? "Подключаемся…" : "Войти"}</div></div>
+        </div>
+        <div class="note">${local ? "Режим проверки на одном компьютере: откройте игру во второй вкладке с тем же адресом." : "Связь напрямую между компьютерами (WebRTC) через бесплатный сервис PeerJS. Все игроки должны открыть одну и ту же игру."}</div>
+        <div class="foot-btns"><div class="btn small ghost" data-act="back">← Назад</div></div>`;
+    }
+    o.innerHTML = `<div class="panel center-panel online"><h2>Играть с друзьями</h2>${body}</div>`;
+    const saveName = () => {
+      const inp = o.querySelector("#netname");
+      if (inp) {
+        g.settings.netName = inp.value.trim().slice(0, 16);
+        saveSettings(g.settings);
+      }
+    };
+    const act = (name, fn) => {
+      const b = o.querySelector(`[data-act=${name}]`);
+      if (b) b.onclick = fn;
+    };
+    act("back", () => {
+      saveName();
+      this.back();
+    });
+    act("host", async () => {
+      saveName();
+      try {
+        await net.host();
+      } catch (e) {
+        this.toast("Не удалось создать комнату: " + (e.message || e));
+      }
+      this.openOnline();
+    });
+    act("join", async () => {
+      saveName();
+      const code = (o.querySelector("#netcode").value || "").trim();
+      if (code.length < 5) {
+        this.toast("Введите код из 5 символов");
+        return;
+      }
+      try {
+        await net.join(code);
+        this.toast("Вы в комнате " + net.code);
+      } catch (e) {
+        net.leave(true);
+        this.toast(e.message || "Не удалось подключиться");
+      }
+      this.openOnline();
+    });
+    act("copy", () => {
+      try {
+        navigator.clipboard.writeText(net.code);
+        this.toast("Код скопирован");
+      } catch (e) {
+        this.toast("Код: " + net.code);
+      }
+    });
+    act("leave", () => {
+      if (g.events.active) g.events.cancel();
+      net.leave();
+      this.updateNetBadge();
+      this.openOnline();
+    });
+    act("drive", () => {
+      if (this.onlineFromPause) this.resume();
+      else this.startFreeRoam();
+    });
+    act("events", () => this.openEvents(this.onlineFromPause));
+    // ввод имени и кода не должен управлять машиной/меню
+    o.querySelectorAll("input").forEach((inp) => {
+      inp.addEventListener("keydown", (ev) => ev.stopPropagation());
+    });
+    this.show("online");
+    this.updateNetBadge();
+  }
+  // Значок «ОНЛАЙН · КОД · игроков» в углу экрана.
+  updateNetBadge() {
+    let b = this.$("netbadge");
+    if (!b) {
+      b = el("div", "netbadge hidden");
+      b.id = "netbadge";
+      document.body.appendChild(b);
+    }
+    const net = this.game.net;
+    if (net && net.status === "online") {
+      b.classList.remove("hidden");
+      b.innerHTML = `<span class="dot"></span>ОНЛАЙН · ${net.code} · ${net.players.size} ${net.players.size === 1 ? "игрок" : net.players.size < 5 ? "игрока" : "игроков"}`;
+    } else {
+      b.classList.add("hidden");
+    }
   }
   openMap() {
     const t = this.game;
@@ -723,7 +948,64 @@ export class UI {
           CAMERA_MODES.map((h, l) => [l, h]),
           e.cameraMode,
         )}</div>
+        <div class="row"><label>Камера «Вертолёт»</label>${i(
+          "heliStyle",
+          [
+            ["news", "Новости"],
+            ["course", "По курсу"],
+          ],
+          e.heliStyle || "news",
+        )}</div>
+        <div class="row"><label>Второй вид (окошко)</label>${i(
+          "pipMode",
+          [[-1, "Нет"]].concat(CAMERA_MODES.map((h, l) => [l, h])),
+          e.pipMode == null ? -1 : e.pipMode,
+        )}</div>
+        <div class="row"><label>Камера «У двери»</label>${i(
+          "doorSide",
+          [
+            [-1, "Слева"],
+            [1, "Справа"],
+          ],
+          e.doorSide || 1,
+        )}</div>
         <div class="note">Геймпад: левый стик — руль, R2/RT — газ, L2/LT — тормоз, A — ручник, RB — ускорение, Y — камера, B — на дорогу, X — старт заезда, Start — пауза.</div>`;
+    } else if (r === "race") {
+      a = `
+        <div class="row"><label>Соперники-боты</label>${i(
+          "bots",
+          [0, 1, 2, 3, 4, 5].map((h) => [h, h === 0 ? "Нет" : String(h)]),
+          e.bots ?? 3,
+        )}</div>
+        <div class="row"><label>Сложность ботов</label>${i(
+          "botLevel",
+          [
+            ["easy", "Лёгкие"],
+            ["normal", "Средние"],
+            ["hard", "Сложные"],
+          ],
+          e.botLevel || "normal",
+        )}</div>
+        <div class="row"><label>Способности</label>${i(
+          "items",
+          [
+            ["boxes", "Коробки"],
+            ["meter", "Шкала"],
+            ["off", "Выкл"],
+          ],
+          e.items || "boxes",
+        )}</div>
+        <div class="row"><label>Имена над машинами</label>${i(
+          "nameTags",
+          [
+            [true, "Вкл"],
+            [false, "Выкл"],
+          ],
+          e.nameTags !== false,
+        )}</div>
+        <div class="note">Боты появляются в спринтах и кольцах (в дрифте их нет). Изменения — со следующего заезда.<br>
+        <b>Коробки</b>: проезжайте через коробку «?» — выпадет ракета 🚀, нитро ⚡ или банан 🍌; применить — F (геймпад: крестовина вниз).<br>
+        <b>Шкала</b>: копится за езду, дрифт и обгоны; когда полная — 1 ракета, 2 нитро, 3 банан (крестовина влево / вверх / вправо).</div>`;
     } else if (r === "snd") {
       const h = e.volume;
       a = ["master", "engine", "music", "ambient"]
@@ -752,6 +1034,7 @@ export class UI {
       <div class="tabs">${[
         ["gfx", "Графика"],
         ["ctl", "Управление"],
+        ["race", "Гонка"],
         ["snd", "Звук"],
         ["keys", "Клавиши"],
       ]
@@ -881,6 +1164,7 @@ export class UI {
       • Очки дрифта растут с углом и скоростью; множитель увеличивается, пока занос не прерывается. Удар о препятствие срывает серию.<br>
       • Светящиеся столбы на карте — старты заездов. Подъедьте и нажмите ${s("interact")}.<br>
       • Фудзи — главный ориентир: она всегда на севере.<br>
+      • Полигон (в главном меню и в паузе) — площадка 4 × 4 км за горами. Слева вверху — замеры: 0–100, 0–200, тормозной путь 100–0, перегрузка в повороте. ${s("respawn")} — обратно на старт.<br>
       • Если игра идёт медленно — выберите пресет «Низкое» в настройках графики.</div>
       <div class="foot-btns"><div class="btn small ghost" data-act="back">← Назад</div></div></div>`;
     t.querySelector("[data-act=back]").onclick = () => this.back();
@@ -925,6 +1209,12 @@ export class UI {
       this.openPause();
     } else if (e === "help") {
       this.show("menu");
+    } else if (e === "online") {
+      if (this.onlineFromPause) {
+        this.openPause();
+      } else {
+        this.show("menu");
+      }
     } else if (e === "pause") {
       this.resume();
     } else if (e === "results") {
@@ -1081,6 +1371,51 @@ export class UI {
     o.classList.add("show");
     this.bannerTimer = 3.2;
   }
+  // ПАНЕЛЬ ЗАМЕРОВ на полигоне (числа считает game/telemetry.js)
+  updateTelemetry(dt, game, show) {
+    const el = this.$("telem");
+    if (show !== this._telemOn) {
+      this._telemOn = show;
+      el.classList.toggle("hidden", !show);
+      this._telemT = 0;
+    }
+    if (!show) return;
+    this._telemT = (this._telemT || 0) - dt;
+    if (this._telemT > 0) return;
+    this._telemT = 0.1;
+    const tm = game.telemetry;
+    const n1 = (v, d = 1) => v.toFixed(d).replace(".", ",");
+    const sec = (v) => (v == null ? "—" : n1(v, 2) + " с");
+    const live = tm.runningTime();
+    const spec = game.carSpec(game.settings.car);
+    const ref = carNumbers(spec);
+    const row = (name, val, sub = "", cls = "") =>
+      `<div class="tl${cls}"><span>${name}</span><b>${val}</b><i>${sub}</i></div>`;
+    const html =
+      `<div class="t1">ПОЛИГОН · ЗАМЕРЫ</div><div class="t2">${spec.name}</div>` +
+      row("Макс. скорость", Math.round(tm.top * 3.6) + " км/ч") +
+      (live != null
+        ? row("0–100 км/ч", n1(live, 1) + " с…", "идёт замер", " live")
+        : row("0–100 км/ч", sec(tm.t100), tm.best100 != null ? "лучшее " + sec(tm.best100) : "")) +
+      row("0–200 км/ч", sec(tm.t200), tm.best200 != null ? "лучшее " + sec(tm.best200) : "") +
+      (tm.stop
+        ? row("100–0 км/ч", n1(tm.stop.d, 1) + " м…", "идёт замер", " live")
+        : row(
+            "100–0 км/ч",
+            tm.brake ? n1(tm.brake.d, 1) + " м" : "—",
+            tm.brake ? sec(tm.brake.t) + (tm.bestBrake ? " · лучшее " + n1(tm.bestBrake.d, 1) + " м" : "") : "",
+          )) +
+      (tm.sliding
+        ? row("Боковая перегрузка", "занос", "в заносе не меряется · макс " + n1(tm.maxLat, 2) + " g")
+        : row("Боковая перегрузка", n1(tm.lat, 2) + " g", "макс " + n1(tm.maxLat, 2) + " g")) +
+      row("Угол заноса", Math.round(tm.slip) + "°") +
+      `<div class="ref">В гараже: 0–100 ${ref.t100 == null ? "—" : n1(ref.t100, 1) + " с"} · 100–0 ${ref.brake100} м · ${ref.top} км/ч · ${n1(ref.latG, 2)} g</div>` +
+      `<div class="hint">Разгон: встань, потом газ. Тормоза: выше 100 км/ч — тормоз до остановки.</div>`;
+    if (html !== this._telemHtml) {
+      el.innerHTML = html;
+      this._telemHtml = html;
+    }
+  }
   setHudVisible(t) {
     this.hud.classList.toggle("hidden", !t);
   }
@@ -1142,9 +1477,11 @@ export class UI {
       this.regionTimer = 0.5;
       const [M, _, z] = biomeAt(i.pos[0], i.pos[2]);
       const T = Math.max(M, _, z);
-      const S = T < 0.4 ? "plains" : T === M ? "sakura" : T === _ ? "autumn" : "high";
-      const E =
-        S === "plains"
+      const poly = e.onPolygon();
+      const S = poly ? "polygon" : T < 0.4 ? "plains" : T === M ? "sakura" : T === _ ? "autumn" : "high";
+      const E = poly
+        ? { name: "Полигон", en: "Test track", color: "#ffd23f" }
+        : S === "plains"
           ? {
               name: "Равнина Фестиваля",
               en: "Festival Plains",
@@ -1170,14 +1507,26 @@ export class UI {
       h = [u.P.x[_], u.P.z[_]];
     }
     const l = u
-      ? []
+      ? c.bots
+        ? c.bots.bots.map((M) => ({
+            x: M.phys.pos[0],
+            z: M.phys.pos[2],
+            color: "#" + M.color.toString(16).padStart(6, "0"),
+            ch: String(M.place || ""),
+          }))
+        : []
       : c.markers.map((M) => ({
           x: M.x,
           z: M.z,
           color: M.def.color,
           ch: M.def.type === "drift" ? "D" : M.def.type === "circuit" ? "○" : "▶",
         }));
-    this.minimap.draw(i, l, h);
+    // на полигоне — своя мини-карта и панель замеров
+    const onPoly = e.onPolygon();
+    if (onPoly && !this.polyMap) this.polyMap = drawTestGroundImage(1024);
+    this.minimap.setArea(onPoly ? this.polyMap : null);
+    this.minimap.draw(i, onPoly ? [] : l, h);
+    this.updateTelemetry(t, e, onPoly);
     const m = [Math.sin(i.yaw), Math.cos(i.yaw)];
     const p = ((Math.atan2(m[0], -m[1]) * 180) / Math.PI + 360) % 360;
     const d = (M, _) => ((Math.atan2(M - i.pos[0], -(_ - i.pos[2])) * 180) / Math.PI + 360) % 360;
@@ -1243,6 +1592,19 @@ export class UI {
         u.def.type === "drift"
           ? Math.round(v.total + (v.active ? v.chain : 0)).toLocaleString("ru")
           : formatTime(u.time);
+      // место в гонке (если есть соперники)
+      const pl = this.$("evplace");
+      if (c.hasRivals() && u.def.type !== "drift") {
+        const st = c.standings();
+        const me = st.find((r) => r.kind === "player");
+        pl.classList.remove("hidden");
+        pl.innerHTML = `<b>${me.place}</b><span>/${st.length}</span>`;
+        this.standingsCache = st;
+      } else {
+        pl.classList.add("hidden");
+        this.standingsCache = null;
+      }
+      this.updateItemSlot(c);
       this.$("evcp").textContent =
         u.def.type === "circuit"
           ? `Круг ${u.lap}/${u.laps} · КТ ${Math.min(u.next + 1, u.cps.length)}/${u.cps.length}`
@@ -1266,7 +1628,7 @@ export class UI {
     }
     const y = e.settings.bindings;
     const k = (M) => keyLabel((y[M] || [])[0]);
-    const w = `${k("throttle")}/${k("brake")} газ/тормоз<b>${k("left")} ${k("right")}</b><br>ручник<b>${k("handbrake")}</b> ускорение<b>${k("boost")}</b><br>на дорогу<b>${k("respawn")}</b> камера<b>${k("camera")}</b><br>пауза<b>${k("pause")}</b> скрыть<b>${k("hud")}</b>`;
+    const w = `${k("throttle")}/${k("brake")} газ/тормоз<b>${k("left")} ${k("right")}</b><br>ручник<b>${k("handbrake")}</b> ускорение<b>${k("boost")}</b><br>${e.onPolygon() ? "на старт" : "на дорогу"}<b>${k("respawn")}</b> камера<b>${k("camera")}</b><br>пауза<b>${k("pause")}</b> скрыть<b>${k("hud")}</b>`;
     if (this._keysHtml !== w) {
       this.$("keys").innerHTML = w;
       this._keysHtml = w;

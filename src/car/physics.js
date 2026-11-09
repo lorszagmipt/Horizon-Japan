@@ -2,6 +2,7 @@
 // Вызывается 120 раз в секунду (шаг PHYSICS_STEP).
 
 import { clamp, lerp, smoothstep, wrapAngle } from "../core/math.js";
+import { inTestValley } from "../world/testGround.js";
 
 // Ускорение свободного падения, м/с².
 const GRAVITY = 9.81;
@@ -44,6 +45,7 @@ export class CarPhysics {
     this.slip = 0;
     this.boost = 1;
     this.boosting = false;
+    this.nitro = 0; // способность «Нитро»: сколько секунд ещё действует сильное ускорение
     this.surface = "road";
     this.ground = {
       h: 0,
@@ -98,6 +100,7 @@ export class CarPhysics {
     this.onGround = true;
     this.inWater = 0;
     this.gear = 1;
+    this.nitro = 0;
     this.bodyPitch = this.bodyRoll = this.bodyPitchV = this.bodyRollV = 0;
     this.updateTilt(1);
   }
@@ -210,14 +213,22 @@ export class CarPhysics {
     const steerTarget = this.steerInput * steerMax;
     this.steer = lerp(this.steer, steerTarget, 1 - Math.exp(-16 * dt));
     // --- УСКОРЕНИЕ (Shift): тратит шкалу boost, в дрифте шкала копится быстрее ---
+    // способность «Нитро» (items.js): сильнее обычного ускорения и не тратит шкалу
+    const nitroOn = this.nitro > 0;
+    if (nitroOn) {
+      this.nitro = Math.max(0, this.nitro - dt);
+    }
     this.boosting = input.boost && this.boost > 0.02 && input.throttle > 0.1;
-    if (this.boosting) {
+    if (nitroOn) {
+      // шкала не тратится и не копится; пламя из выхлопа и эффект скорости — как при ускорении
+      this.boosting = true;
+    } else if (this.boosting) {
       this.boost = Math.max(0, this.boost - dt * 0.22);
     } else {
       this.boost = Math.min(1, this.boost + dt * (0.035 + (this.drifting ? 0.06 : 0)));
     }
     // --- ТЯГА И ТОРМОЗА: accel — продольное ускорение, м/с² ---
-    const topSpeed = phys.vmax * (this.boosting ? 1.12 : 1);
+    const topSpeed = phys.vmax * (nitroOn ? 1.25 : this.boosting ? 1.12 : 1);
     let accel = 0;
     const throttle = input.throttle;
     const brake = input.brake;
@@ -225,14 +236,16 @@ export class CarPhysics {
       this.shiftTimer -= dt;
     }
     const shiftFactor = this.shiftTimer > 0 ? 0.55 : 1;
-    if (throttle > 0 && vLong > -1) {
+    // с нитро машина тянет, даже если газ не нажат
+    const throttleN = nitroOn ? Math.max(throttle, 1) : throttle;
+    if (throttleN > 0 && vLong > -1) {
       const powerCurve = 1 - Math.pow(clamp(vLong / topSpeed, 0, 1.05), 2.4);
       accel +=
         phys.power *
-        throttle *
+        throttleN *
         Math.max(powerCurve, -0.3) *
         shiftFactor *
-        (this.boosting ? 1.45 : 1) *
+        (nitroOn ? 1.9 : this.boosting ? 1.45 : 1) *
         (onGround ? 1 : 0);
     }
     if (brake > 0) {
@@ -509,10 +522,11 @@ export class CarPhysics {
         }
       }
     }
-    // невидимая стена на краю карты
+    // невидимая стена на краю карты (на полигоне за картой её нет — там свои стенки)
     const LIMIT = 1530;
+    const onPolygon = inTestValley(this.pos[0], this.pos[2]);
     for (const axis of [0, 2]) {
-      if (Math.abs(this.pos[axis]) > LIMIT) {
+      if (!onPolygon && Math.abs(this.pos[axis]) > LIMIT) {
         const side = Math.sign(this.pos[axis]);
         this.pos[axis] = side * LIMIT;
         const vel = axis === 0 ? this.vx : this.vz;

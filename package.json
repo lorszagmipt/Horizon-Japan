@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "zip": "vite build && powershell -NoProfile -Command \"Compress-Archive -Path dist/* -DestinationPath yandex-game.zip -Force\""
   },
+  "dependencies": {
+    "peerjs": "^1.5.4"
+  },
   "devDependencies": {
     "vite": "^7.1.0"
   }

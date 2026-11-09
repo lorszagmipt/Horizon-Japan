@@ -1,5 +1,15 @@
 // Список машин: название, размеры кузова (body), форма и параметры физики (phys: мощность power, макс. скорость vmax, сцепление grip, тормоза brake, руль steer, склонность к дрифту drift).
 
+// ОБЩАЯ ПАЛИТРА: эти цвета доступны каждой машине в гараже (после её «фирменных» цветов).
+// Добавь сюда любой цвет в формате 0xRRGGBB — он сразу появится в гараже.
+export const PALETTE = [
+  0xd7262f, 0xff4f3a, 0xff6a13, 0xff9a1f, 0xf2b705, 0xffe14d, 0xc8e64a, 0x9be22d,
+  0x2e8b4a, 0x0f6d6a, 0x1fb5a8, 0x5fd3e8, 0x3a8dde, 0x1f4fbf, 0x1f3f8f, 0x23286b,
+  0x6b2fd6, 0x9b5de5, 0xc77dff, 0xff6fa8, 0xe23e7c, 0x8e1020, 0x5a1a2a, 0x7a4a2a,
+  0xb08850, 0xe6e2d6, 0xf4f1ea, 0xf5f5f5, 0xb9bdc4, 0x7d828b, 0x4a4d55, 0x2b2b30,
+  0x111216,
+];
+
 export const CARS = [
   {
     id: "kaze",
@@ -520,3 +530,50 @@ export const CARS = [
     },
   },
 ];
+
+// У каждой машины: сначала её фирменные цвета, потом вся общая палитра (без повторов).
+for (const car of CARS) {
+  car.colors = [...car.colors, ...PALETTE.filter((c) => !car.colors.includes(c))];
+}
+
+// ЦИФРЫ ДЛЯ ГАРАЖА — считаются по тем же формулам, что и физика (src/car/physics.js),
+// поэтому если поменять phys у машины, цифры в гараже поменяются сами.
+// Возвращает { top: км/ч, t100: секунд до 100 км/ч, brake100: метров со 100 до 0, latG: g в повороте }.
+export function carNumbers(car) {
+  const p = car.phys;
+  const gearSteps = [0, 0.18, 0.32, 0.47, 0.63, 0.8, 1];
+  const dt = 1 / 120;
+  let v = 0;
+  let t = 0;
+  let gear = 1;
+  let shift = 0;
+  let t100 = null;
+  for (let i = 0; i < 120 * 90; i++) {
+    const curve = 1 - Math.pow(Math.min(v / p.vmax, 1.05), 2.4);
+    let a = p.power * Math.max(curve, -0.3) * (shift > 0 ? 0.55 : 1);
+    a -= 0.0009 * v * v + 0.12;
+    if (shift > 0) shift -= dt;
+    v = Math.max(0, v + a * dt);
+    t += dt;
+    const lo = gearSteps[gear - 1];
+    const hi = gearSteps[gear];
+    if ((v / p.vmax - lo * 0.75) / (hi - lo * 0.75) > 1 && gear < 6) {
+      gear++;
+      shift = 0.18;
+    }
+    if (t100 === null && v >= 100 / 3.6) t100 = t;
+  }
+  // тормозной путь со 100 км/ч: тормоза + сопротивление воздуха и качению
+  let vb = 100 / 3.6;
+  let d = 0;
+  while (vb > 0) {
+    vb -= (p.brake + 0.0009 * vb * vb + 0.12) * dt;
+    d += Math.max(vb, 0) * dt;
+  }
+  return {
+    top: Math.round(v * 3.6),
+    t100: t100 == null ? null : t100 + 0.1, // +0,1 с на трогание (так совпадает с замером в игре)
+    brake100: Math.round(d),
+    latG: 1.9 * p.grip,
+  };
+}

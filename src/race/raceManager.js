@@ -1,5 +1,7 @@
 // Проведение заезда: старт и отсчёт, ворота-чекпоинты, прогресс, время, финиш и медали.
 
+import { BotField } from "./bots.js";
+import { ItemSystem } from "./items.js";
 import { clamp, lerp, rgb } from "../core/math.js";
 import { LANDMARKS } from "../world/mapData.js";
 import { MeshBuilder, boxGeo, makeTransform } from "../render/mesh.js";
@@ -282,10 +284,18 @@ export class RaceManager {
     this.gates = null;
   }
   // Старт заезда по id: ставит машину на старт, расставляет чекпоинты, запускает отсчёт.
-  start(id) {
+  // net — когда заезд пришёл от хозяина комнаты: { grid: [id игроков по местам], items, bots }.
+  start(id, net) {
     const ev = EVENTS.find((h) => h.id === id);
     const game = this.game;
     const path = this.paths[id];
+    const online = game.isOnline();
+    if (online && !game.net.isHost && !net) {
+      if (game.ui) game.ui.toast("Заезд выбирает хозяин комнаты");
+      return;
+    }
+    this.disposeBots();
+    if (online) game.net.clearBots();
     this.clearGates();
     const laps = ev.laps || 1;
     const total = ev.type === "circuit" ? path.lapLen * laps : path.length;
@@ -321,9 +331,39 @@ export class RaceManager {
     }));
     this.drift.reset();
     this.setMarkersVisible(false);
-    const startIdx = 0;
-    const heading = Math.atan2(path.tx[startIdx], path.tz[startIdx]);
-    game.car.place(path.x[startIdx], path.z[startIdx], heading);
+    // СТАРТОВАЯ РЕШЁТКА: без соперников — по центру дороги, как раньше; иначе по местам в два ряда
+    let grid = net ? net.grid : online ? ["h", ...[...game.net.players.keys()].filter((k) => k !== "h")] : ["me"];
+    const mySlot = Math.max(0, grid.indexOf(online ? game.net.myId : "me"));
+    const botCount = ev.type === "drift" ? 0 : net ? 0 : (game.settings.bots ?? 3);
+    if (grid.length + botCount > 1) {
+      const g0 = this.gridPos(path, mySlot, ev.type === "circuit");
+      game.car.place(g0[0], g0[1], g0[2]);
+      // на кольце позади линии старта: прогресс отрицательный, чтобы пересечение линии не засчиталось кругом
+      if (ev.type === "circuit" && g0[3] > 0) {
+        this.active.progress = -g0[3];
+        this.active.idx = this.pathPoint(path, path.lapLen - g0[3]);
+      }
+    } else {
+      const startIdx = 0;
+      const heading = Math.atan2(path.tx[startIdx], path.tz[startIdx]);
+      game.car.place(path.x[startIdx], path.z[startIdx], heading);
+    }
+    game.car.boost = 1; // шкала ускорения (Shift) на старте заезда — полная
+    // СОПЕРНИКИ: боты (кроме дрифта). Сколько и какой сложности — Настройки → Гонка.
+    // В сетевой игре ботов ведёт хозяин комнаты, гости видят их как чужие машины.
+    if (botCount > 0) {
+      this.bots = new BotField(game, this.active, botCount, game.settings.botLevel || "normal", grid.length);
+    }
+    // СПОСОБНОСТИ (ракета, нитро, банан): «коробки» или «шкала» — Настройки → Гонка
+    const itemMode = net ? net.items : game.settings.items || "boxes";
+    if (ev.type !== "drift" && itemMode !== "off") {
+      this.items = new ItemSystem(game, this.active, itemMode);
+      if (online) this.items.onAction = (a) => game.net.sendAction(a);
+    }
+    if (online && game.net.isHost && !net) {
+      game.net.sendStart({ ev: id, grid, items: itemMode });
+    }
+    game.playerFx.spin = 0;
     game.rig.snap = true;
     game.state = "drive";
     this.lockControls = true;
@@ -362,8 +402,98 @@ export class RaceManager {
       }
     }
   }
+  // Место k на стартовой решётке: два ряда, через ряд — gridGap метров назад. Возвращает [x, z, yaw, назад_м].
+  gridPos(path, k, isCircuit) {
+    const world = this.game.world;
+    const row = Math.floor(k / 2);
+    const side = k % 2 ? 1 : -1;
+    const back = row * 9 + (k % 2) * 3;
+    const at = (back, lat) => {
+      if (isCircuit && back > 0) {
+        const idx = this.pathPoint(path, path.lapLen - back);
+        return [path.x[idx] + path.tz[idx] * lat, path.z[idx] - path.tx[idx] * lat, Math.atan2(path.tx[idx], path.tz[idx]), back];
+      }
+      const tx = path.tx[0];
+      const tz = path.tz[0];
+      return [path.x[0] - tx * back + tz * lat, path.z[0] - tz * back - tx * lat, Math.atan2(tx, tz), back];
+    };
+    // место свободно: нет столбов/отбойников в радиусе машины и это не вода
+    const free = (p) => {
+      const g = world.groundAt(p[0], p[1], {});
+      if (g.surface === "water" || g.h < -0.5) return false;
+      return world.colliders.resolveCircle(p[0], p[1], 2.6, g.h + 0.5, []).length === 0;
+    };
+    let p = at(back, side * path.hw[0] * 0.42);
+    if (!free(p)) p = at(back, 0);
+    if (!free(p)) {
+      // позади старта места нет (обрыв, отбойник) — ставим впереди по маршруту
+      const idx = this.pathPoint(path, 12 + k * 7);
+      const lat = side * path.hw[idx] * 0.42;
+      p = [path.x[idx] + path.tz[idx] * lat, path.z[idx] - path.tx[idx] * lat, Math.atan2(path.tx[idx], path.tz[idx]), 0];
+    }
+    return p;
+  }
+  // Гость: хозяин комнаты запустил заезд.
+  startNet(m) {
+    const game = this.game;
+    if (this.active) this.cancel();
+    if (game.ui) {
+      game.ui.hideScreens();
+      game.ui.initMaps && game.ui.initMaps();
+    }
+    this.start(m.ev, m);
+  }
+  // ГОНЩИКИ ЗАЕЗДА: игрок + боты + друзья по сети. У каждого: phys (машина), progress (метры), place (место).
+  playerRacer() {
+    const run = this.active;
+    const me = this.me || (this.me = { kind: "player", id: "me", name: "Вы", item: null, meter: 0, itemThink: 0 });
+    me.id = this.game.isOnline() ? this.game.net.myId : "me";
+    me.phys = this.game.car;
+    me.effects = this.game.playerFx;
+    me.color = this.game.carColor(this.game.car.spec);
+    me.spec = this.game.car.spec;
+    if (run) {
+      me.progress = run.progress;
+      me.idx = run.idx;
+      me.finished = run.finished;
+      me.finishTime = run.finished ? run.time : null;
+    }
+    return me;
+  }
+  racers() {
+    const list = [this.playerRacer()];
+    if (this.bots) list.push(...this.bots.bots);
+    if (this.game.isOnline()) list.push(...this.game.net.remoteRacers());
+    return list;
+  }
+  hasRivals() {
+    return this.racers().length > 1;
+  }
+  // МЕСТА: финишировавшие — по времени, остальные — по пройденному пути.
+  standings() {
+    const list = this.racers().slice();
+    list.sort((a, b) => {
+      if (a.finished && b.finished) return a.finishTime - b.finishTime;
+      if (a.finished) return -1;
+      if (b.finished) return 1;
+      return b.progress - a.progress;
+    });
+    list.forEach((r, k) => (r.place = k + 1));
+    return list;
+  }
+  disposeBots() {
+    if (this.bots) {
+      this.bots.dispose();
+      this.bots = null;
+    }
+    if (this.items) {
+      this.items.dispose();
+      this.items = null;
+    }
+  }
   cancel() {
     if (this.active) {
+      this.disposeBots();
       this.active = null;
       this.lockControls = false;
       this.clearGates();
@@ -404,6 +534,12 @@ export class RaceManager {
     const run = this.active;
     if (run.finished) {
       return;
+    }
+    if (this.bots) {
+      this.bots.update(dt, run.progress);
+    }
+    if (this.items) {
+      this.items.update(dt);
     }
     if (!run.started) {
       const before = Math.ceil(run.countdown - 0.5);
@@ -526,6 +662,15 @@ export class RaceManager {
               ? "bronze"
               : null;
     }
+    // лучшая медаль за этот заезд тоже сохраняется в браузере
+    const RANK = { gold: 3, silver: 2, bronze: 1 };
+    if (medal && (RANK[medal] || 0) > (RANK[rec.medal] || 0)) {
+      rec.medal = medal;
+      saveBest(this.best);
+    }
+    // места в гонке с ботами: кто уже финишировал — впереди
+    const standings = this.hasRivals() ? this.standings() : null;
+    const place = standings ? standings.find((r) => r.kind === "player").place : null;
     if (game.audio) {
       game.audio.fanfare();
     }
@@ -541,6 +686,16 @@ export class RaceManager {
         session: this.sessionBest[id],
         history: rec.history,
         medal: medal,
+        place: place,
+        standings: standings
+          ? standings.map((r) => ({
+              name: r.name,
+              car: r.kind === "player" ? game.car.spec.name : r.spec.name,
+              me: r.kind === "player",
+              time: r.finished ? r.finishTime : null,
+              behind: r.finished ? null : Math.max(0, run.total - r.progress),
+            }))
+          : null,
         ref: isDrift
           ? ev.medals
           : [run.total / ev.vref, (run.total / ev.vref) * 1.15, (run.total / ev.vref) * 1.35],
@@ -549,6 +704,7 @@ export class RaceManager {
   }
   closeResults(restart) {
     const id = this.active && this.active.def.id;
+    this.disposeBots();
     this.active = null;
     this.lockControls = false;
     this.setMarkersVisible(true);

@@ -370,8 +370,9 @@ class DebugTools {
     };
     if (k.has("KeyW") || k.has("ArrowUp")) move(dir, v);
     if (k.has("KeyS") || k.has("ArrowDown")) move(dir, -v);
-    if (k.has("KeyA") || k.has("ArrowLeft")) move(right, v);
-    if (k.has("KeyD") || k.has("ArrowRight")) move(right, -v);
+    // right — направление «вправо по экрану»: D — вправо, A — влево
+    if (k.has("KeyA") || k.has("ArrowLeft")) move(right, -v);
+    if (k.has("KeyD") || k.has("ArrowRight")) move(right, v);
     if (k.has("Space")) f.pos[1] += v;
     if (k.has("KeyZ")) f.pos[1] -= v;
   }
@@ -630,8 +631,28 @@ class DebugTools {
       }
     }
     // --- края дорог и «ступеньки» между дорогой и землёй
+    // У перекрёстков край идёт по скруглению (junctions.js): старые прямые края там не рисуем,
+    // а рисуем настоящий край перекрёстка. «Ступенька» — разница высот, которую физика видит
+    // чуть внутри и чуть снаружи границы дороги (как в groundAt).
     if (this.layers.edges || this.layers.steps) {
-      for (const road of world.roads.roads) {
+      const roads = world.roads;
+      // точка лежит на настоящей границе (а не внутри перекрёстка)?
+      const onBorder = (p, want) => {
+        const jn = roads.junctionAt(p[0], p[2]);
+        return !jn || Math.abs(jn.F - want) < 0.2;
+      };
+      const groundY = (p) => world.groundAt(p[0], p[2], gr).h + 0.03;
+      const stepAt = (x, z, nx, nz) => {
+        const hin = world.groundAt(x - nx * 0.05, z - nz * 0.05, gr).h;
+        const hout = world.groundAt(x + nx * 0.05, z + nz * 0.05, gr).h;
+        const step = hin - hout;
+        if (Math.abs(step) <= 0.15) return;
+        const bad = Math.abs(step) > 0.3;
+        line([x, hout, z], [x, hin, z], bad ? "#ff3b3b" : "#ffd23b", bad ? 3 : 2);
+        if (bad && Math.hypot(x - cx, z - cz) < 35)
+          text([x, hin, z], (step > 0 ? "+" : "") + fmt(step, 2), "#ff8080");
+      };
+      for (const road of roads.roads) {
         let prev = null;
         for (let i = 0; i < road.n; i++) {
           const x = road.x[i];
@@ -645,40 +666,61 @@ class DebugTools {
           const y = road.h[i] + 0.03;
           const hw = road.hw;
           const pe = hw + 1.45;
-          const cur = {
-            l: [x + nx * hw, y, z + nz * hw],
-            r: [x - nx * hw, y, z - nz * hw],
-            pl: [x + nx * pe, y, z + nz * pe],
-            pr: [x - nx * pe, y, z - nz * pe],
+          const mk = (k) => {
+            const q = [x + nx * k, y, z + nz * k];
+            return q;
+          };
+          const cur = { l: mk(hw), r: mk(-hw), pl: mk(pe), pr: mk(-pe) };
+          cur.ok = {
+            l: onBorder(cur.l, 0),
+            r: onBorder(cur.r, 0),
+            pl: onBorder(cur.pl, 1.45),
+            pr: onBorder(cur.pr, 1.45),
           };
           if (this.layers.edges && prev) {
-            line(prev.l, cur.l, "rgba(255,255,255,.85)", 1.2);
-            line(prev.r, cur.r, "rgba(255,255,255,.85)", 1.2);
-            line(prev.pl, cur.pl, "#33e0ff", 1.2, [5, 4]);
-            line(prev.pr, cur.pr, "#33e0ff", 1.2, [5, 4]);
-          }
-          if (this.layers.steps && i % 2 === 0 && !(road.flags[i] & 1)) {
-            for (const side of [cur.pl, cur.pr]) {
-              const th = world.terrain.heightAt(side[0], side[2]);
-              const step = road.h[i] - th;
-              if (Math.abs(step) > 0.15) {
-                const bad = Math.abs(step) > 0.3;
-                line(
-                  [side[0], th, side[2]],
-                  [side[0], road.h[i], side[2]],
-                  bad ? "#ff3b3b" : "#ffd23b",
-                  bad ? 3 : 2,
-                );
-                if (bad && Math.hypot(side[0] - cx, side[2] - cz) < 35)
-                  text(
-                    [side[0], road.h[i], side[2]],
-                    (step > 0 ? "+" : "") + fmt(step, 2),
-                    "#ff8080",
-                  );
-              }
+            for (const [key, color, dash] of [
+              ["l", "rgba(255,255,255,.85)", null],
+              ["r", "rgba(255,255,255,.85)", null],
+              ["pl", "#33e0ff", [5, 4]],
+              ["pr", "#33e0ff", [5, 4]],
+            ]) {
+              if (prev.ok[key] && cur.ok[key]) line(prev[key], cur[key], color, 1.2, dash);
             }
           }
+          if (this.layers.steps && i % 2 === 0 && !(road.flags[i] & 1)) {
+            if (cur.ok.pl) stepAt(cur.pl[0], cur.pl[2], nx, nz);
+            if (cur.ok.pr) stepAt(cur.pr[0], cur.pr[2], -nx, -nz);
+          }
           prev = cur;
+        }
+      }
+      // края перекрёстков: по дуге и краю примыкающей дороги
+      for (const j of roads.junctionShapes || []) {
+        if (Math.hypot(j.ox - cx, j.oz - cz) > RADIUS + j.reach) continue;
+        if (!j._dbg) {
+          j._dbg = [-1, 1].map((side) =>
+            j.paths[side].map(([x, z]) => {
+              const [gx, gz] = j.outward(x, z);
+              return { e: [x, 0, z], p: [x + gx * 1.45, 0, z + gz * 1.45], gx, gz };
+            }),
+          );
+          for (const path of j._dbg) {
+            for (const q of path) {
+              q.e[1] = groundY(q.e);
+              q.p[1] = groundY(q.p);
+            }
+          }
+        }
+        for (const path of j._dbg) {
+          for (let k = 1; k < path.length; k++) {
+            if (this.layers.edges) {
+              line(path[k - 1].e, path[k].e, "rgba(255,255,255,.85)", 1.2);
+              line(path[k - 1].p, path[k].p, "#33e0ff", 1.2, [5, 4]);
+            }
+            if (this.layers.steps && k % 4 === 0) {
+              stepAt(path[k].p[0], path[k].p[2], path[k].gx, path[k].gz);
+            }
+          }
         }
       }
     }

@@ -567,77 +567,106 @@ export class RoadNetwork {
     const t = [];
     for (const e of this.roads) {
       const s = e.n;
-      // у примыкающих дорог начало/конец обрезаны: там лежит заплатка перекрёстка (junctions.js)
-      const o = e.meshTo ?? (e.closed ? s : s - 1);
-      const i = 220;
-      for (let n = e.meshFrom || 0; n < o; n += i) {
-        const a = new MeshBuilder();
-        const r = new MeshBuilder();
-        const c = Math.min(o, n + i);
-        let u = null;
-        for (let l = n; l <= c; l++) {
-          const m = l % s;
-          const p = e.hw;
-          const d = 1.4;
-          const x = e.x[m];
-          const v = e.z[m];
-          const g = e.h[m];
-          const b = e.tz[m];
-          const y = -e.tx[m];
-          const k = l === s ? e.length : e.dist[m];
-          const w = [e.sak[m], e.aut[m], e.edge[m] / 3, 0];
-          const M = e.flags[m] & 1;
-          const _ = M ? 1.1 : 1.6;
-          const z = [-(p + d), -p, p, p + d];
-          const T = [];
-          T.push(
-            a.vertex(x - b * (p + d), g - _, v - y * (p + d), -b, 0, -y, w, [
-              -(p + d + 0.3),
-              k,
-              p,
-              e.lane,
-            ]),
-          );
-          for (const E of z) {
-            T.push(a.vertex(x + b * E, g, v + y * E, 0, 1, 0, w, [E, k, p, e.lane]));
-          }
-          T.push(
-            a.vertex(x + b * (p + d), g - _, v + y * (p + d), b, 0, y, w, [
-              p + d + 0.3,
-              k,
-              p,
-              e.lane,
-            ]),
-          );
-          let S = null;
-          if (M) {
-            const E = [0.55, 0.53, 0.5, 0];
-            S = [
-              r.vertex(x - b * (p + d), g - _, v - y * (p + d), 0, -1, 0, E),
-              r.vertex(x + b * (p + d), g - _, v + y * (p + d), 0, -1, 0, E),
-            ];
-          }
-          if (u) {
-            for (let E = 0; E < 5; E++) {
-              a.quad(u.ids[E], T[E], T[E + 1], u.ids[E + 1]);
-            }
-            if (S && u.uids) {
-              r.quad(u.uids[0], u.uids[1], S[1], S[0]);
-            }
-          }
-          u = {
-            ids: T,
-            uids: S,
-          };
+      const segCount = e.closed ? s : s - 1;
+      // какие отрезки ленты не рисовать: начало/конец примыкающих дорог и участки главных дорог
+      // у перекрёстков — там дорогу рисует сам перекрёсток (junctions.js)
+      const skip = new Uint8Array(segCount);
+      for (let k = 0; k < segCount; k++) {
+        if (k < (e.meshFrom || 0) || k >= (e.meshTo ?? segCount)) {
+          skip[k] = 1;
         }
-        const h = a.bounds();
-        t.push({
-          road: e,
-          geo: a,
-          under: r.vertexCount ? r : null,
-          center: h.center,
-          radius: h.radius,
-        });
+      }
+      for (const [a, b] of e.meshSkip || []) {
+        for (let k = a; k !== b; k = (k + 1) % s) {
+          skip[k] = 1;
+        }
+      }
+      // непрерывные куски ленты: [первый отрезок, последний + 1]
+      const runs = [];
+      for (let k = 0; k < segCount; ) {
+        if (skip[k]) {
+          k++;
+          continue;
+        }
+        let j = k;
+        while (j < segCount && !skip[j]) {
+          j++;
+        }
+        runs.push([k, j]);
+        k = j;
+      }
+      const i = 220;
+      for (const [r0, r1] of runs) {
+        for (let n = r0; n < r1; n += i) {
+          const a = new MeshBuilder();
+          const r = new MeshBuilder();
+          const c = Math.min(r1, n + i);
+          let u = null;
+          for (let l = n; l <= c; l++) {
+            const m = l % s;
+            const p = e.hw;
+            const d = 1.4;
+            const x = e.x[m];
+            const v = e.z[m];
+            const g = e.h[m];
+            const b = e.tz[m];
+            const y = -e.tx[m];
+            const k = l === s ? e.length : e.dist[m];
+            const w = [e.sak[m], e.aut[m], e.edge[m] / 3, 0];
+            const M = e.flags[m] & 1;
+            const _ = M ? 1.1 : 1.6;
+            // поперёк: обочина, край асфальта, ось, край асфальта, обочина (+ «юбки» вниз по бокам)
+            const z = [-(p + d), -p, 0, p, p + d];
+            const T = [];
+            T.push(
+              a.vertex(x - b * (p + d), g - _, v - y * (p + d), -b, 0, -y, w, [
+                -(p + d + 0.3),
+                k,
+                p,
+                e.lane,
+              ]),
+            );
+            for (const E of z) {
+              T.push(a.vertex(x + b * E, g, v + y * E, 0, 1, 0, w, [E, k, p, e.lane]));
+            }
+            T.push(
+              a.vertex(x + b * (p + d), g - _, v + y * (p + d), b, 0, y, w, [
+                p + d + 0.3,
+                k,
+                p,
+                e.lane,
+              ]),
+            );
+            let S = null;
+            if (M) {
+              const E = [0.55, 0.53, 0.5, 0];
+              S = [
+                r.vertex(x - b * (p + d), g - _, v - y * (p + d), 0, -1, 0, E),
+                r.vertex(x + b * (p + d), g - _, v + y * (p + d), 0, -1, 0, E),
+              ];
+            }
+            if (u) {
+              for (let E = 0; E < T.length - 1; E++) {
+                a.quad(u.ids[E], T[E], T[E + 1], u.ids[E + 1]);
+              }
+              if (S && u.uids) {
+                r.quad(u.uids[0], u.uids[1], S[1], S[0]);
+              }
+            }
+            u = {
+              ids: T,
+              uids: S,
+            };
+          }
+          const h = a.bounds();
+          t.push({
+            road: e,
+            geo: a,
+            under: r.vertexCount ? r : null,
+            center: h.center,
+            radius: h.radius,
+          });
+        }
       }
     }
     // заплатки перекрёстков

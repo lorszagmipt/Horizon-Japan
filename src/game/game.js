@@ -10,8 +10,13 @@ import { LIGHTING_PRESETS, blendAtmosphere } from "../render/sky.js";
 import { CarPhysics } from "../car/physics.js";
 import { CARS } from "../car/cars.js";
 import { CarView } from "../car/carView.js";
-import { CameraRig } from "../camera/cameraRig.js";
+import { CameraRig, CAMERA_MODES } from "../camera/cameraRig.js";
 import { Reflections } from "../render/reflections.js";
+import { loadSpot, saveSpot } from "./settings.js";
+import { NetSession } from "../net/net.js";
+import { collideCars } from "../race/bots.js";
+import { TEST_GROUND, inTestValley, testGroundSpawn } from "../world/testGround.js";
+import { Telemetry } from "./telemetry.js";
 
 // Главный объект игры. Хранит мир, машину (car — физика, carView — модель), камеру, эффекты, звук, интерфейс.
 export class Game {
@@ -20,6 +25,9 @@ export class Game {
     this.layout = MAP;
     this.cam = new Camera();
     this.rig = new CameraRig(this.cam, this.world);
+    // второй вид в окошке справа снизу (Настройки → Управление → «Второй вид»)
+    this.cam2 = new Camera();
+    this.rig2 = new CameraRig(this.cam2, this.world);
     this.time = 0;
     this.state = "menu";
     this.hudVisible = true;
@@ -30,8 +38,51 @@ export class Game {
     this.spawnCar(this.settings.car);
     this.placeAtSpawn();
     this.rig.mode = this.settings.cameraMode || 0;
+    this.rig.doorSide = this.settings.doorSide || 1;
+    this.applyCamSettings(this.settings);
     this.water = new Reflections(this.renderer, this.world);
     this.buildParkedCars();
+    this.spotTimer = 0;
+    // эффекты способностей на машине игрока: spin — крутит после банана/ракеты, boost — нитро
+    this.playerFx = { spin: 0, boost: 0 };
+    // онлайн-игра с друзьями (src/net/net.js): пока не создана комната — выключена
+    this.net = new NetSession(this);
+    // полигон за картой (world/testGround.js) и замеры на нём
+    this.testGround = TEST_GROUND;
+    this.telemetry = new Telemetry();
+    // при закрытии вкладки запоминаем, где стоит машина
+    window.addEventListener("pagehide", () => this.rememberSpot());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.rememberSpot();
+    });
+  }
+  // В комнате с друзьями?
+  isOnline() {
+    return !!(this.net && this.net.status === "online");
+  }
+  // Машина на полигоне за картой?
+  onPolygon() {
+    return !!this.car && inTestValley(this.car.pos[0], this.car.pos[2]);
+  }
+  // Поставить машину на старт полигона.
+  placeAtTestGround() {
+    const s = testGroundSpawn();
+    this.car.place(s.x, s.z, s.yaw);
+    this.rig.snap = true;
+    this.rig2.snap = true;
+    if (this.fx) this.fx.clearTrails();
+  }
+  // СОХРАНЕНИЕ МЕСТА НА КАРТЕ: только в свободной езде (не в заезде, не в гараже/меню, не на полигоне).
+  rememberSpot() {
+    if (this.noSave || !this.car || this.onPolygon()) return;
+    const free = this.state === "drive" || this.state === "paused";
+    if (!free || (this.events && this.events.active)) return;
+    if (this.car.inWater > 0 || !this.car.onGround) return;
+    saveSpot({
+      x: +this.car.pos[0].toFixed(2),
+      z: +this.car.pos[2].toFixed(2),
+      yaw: +this.car.yaw.toFixed(4),
+    });
   }
   buildParkedCars() {
     let { LANDMARKS: t } = this.layout;
@@ -153,6 +204,8 @@ export class Game {
     this.car.settings.steerSens = settings.steerSens;
     this.car.settings.driftStrength = settings.driftStrength;
     this.rig.mode = settings.cameraMode || 0;
+    this.rig.doorSide = settings.doorSide || 1;
+    this.applyCamSettings(settings);
     if (this.audio) {
       this.audio.applyVolumes();
     }
@@ -174,6 +227,27 @@ export class Game {
     if (this.air) {
       this.updateAtmosphere(0);
     }
+  }
+  // Настройки камер: стиль вертолёта и второй вид в окошке.
+  applyCamSettings(settings) {
+    for (const r of [this.rig, this.rig2]) {
+      r.heliStyle = settings.heliStyle || "news";
+      r.doorSide = settings.doorSide || 1;
+    }
+    const pip = settings.pipMode == null ? -1 : +settings.pipMode;
+    if (pip !== this.rig2.mode) this.rig2.snap = true;
+    this.rig2.mode = pip;
+    this.pipOn = pip >= 0;
+  }
+  // Где на экране окошко второго вида (в CSS-пикселях): справа, над спидометром.
+  pipRect() {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const w = Math.round(clamp(W * 0.28, 200, 460));
+    const h = Math.round((w * 9) / 16);
+    const right = 20;
+    const bottom = Math.min(250, Math.max(20, H - h - 140));
+    return { x: W - w - right, y: H - h - bottom, w, h, bottom, right };
   }
   updateAtmosphere(dt) {
     const camPos = this.cam.pos;
@@ -218,7 +292,18 @@ export class Game {
       this.carView.update(this.carViewState());
     }
   }
-  placeAtSpawn() {
+  // Поставить машину туда, где игрок был в прошлый раз; если такого места нет — на старт карты.
+  placeAtSpawn(fresh = false) {
+    const spot = fresh || this.noSave ? null : loadSpot();
+    if (spot) {
+      const g = this.world.groundAt(spot.x, spot.z, {});
+      const inside = Math.abs(spot.x) < 5000 && Math.abs(spot.z) < 5000;
+      if (inside && g && isFinite(g.h) && g.surface !== "water") {
+        this.car.place(spot.x, spot.z, spot.yaw);
+        this.rig.snap = true;
+        return;
+      }
+    }
     const road = this.world.roads.byId[SPAWN.road];
     const idx = this.world.roads.indexAtDist(road, SPAWN.dist);
     const heading = Math.atan2(road.tx[idx], road.tz[idx]);
@@ -257,7 +342,7 @@ export class Game {
         this.rig.cycle();
         this.settings.cameraMode = this.rig.mode;
         if (this.ui) {
-          this.ui.toast("Камера: " + ["Погоня", "Близко", "Капот", "Кино"][this.rig.mode]);
+          this.ui.toast("Камера: " + CAMERA_MODES[this.rig.mode]);
         }
       }
       if (pressed.has("respawn")) {
@@ -269,7 +354,22 @@ export class Game {
           this.ui.setHudVisible(this.hudVisible);
         }
       }
-      const carInput =
+      // СПОСОБНОСТИ ИГРОКА: F — из коробки, 1/2/3 — со шкалы
+      const items = this.events && this.events.items;
+      if (items) {
+        const me = this.events.playerRacer();
+        if (pressed.has("item")) items.use(me);
+        if (pressed.has("item1")) items.use(me, "rocket");
+        if (pressed.has("item2")) items.use(me, "nitro");
+        if (pressed.has("item3")) items.use(me, "banana");
+      }
+      // после банана или ракеты машину несколько мгновений крутит — руль не слушается
+      let spinInput = null;
+      if (this.playerFx.spin > 0) {
+        this.playerFx.spin -= dt;
+        spinInput = { throttle: 0, brake: 0.3, steer: Math.sin(this.playerFx.spin * 14), handbrake: true, boost: false };
+      }
+      const carInput = spinInput ? spinInput :
         this.events && this.events.lockControls
           ? {
               throttle: 0,
@@ -283,8 +383,21 @@ export class Game {
       for (const ev of this.car.events) {
         this.onCarEvent(ev);
       }
+      // ЗАМЕРЫ НА ПОЛИГОНЕ (game/telemetry.js); другая машина — замеры с нуля
+      if (this.onPolygon()) {
+        if (this.telemetry.carId !== this.settings.car) {
+          this.telemetry.reset();
+          this.telemetry.carId = this.settings.car;
+        }
+        this.telemetry.update(dt, this.car, carInput);
+      }
       if (this.car.inWater > 1.2) {
         this.respawn(true);
+      }
+      this.spotTimer += dt;
+      if (this.spotTimer > 2) {
+        this.spotTimer = 0;
+        this.rememberSpot();
       }
     }
     if (this.state !== "free") {
@@ -297,11 +410,43 @@ export class Game {
         this.rig.update(this.state === "paused" ? 0 : dt, this.car, {
           lookBack: controls.lookBack,
         });
+        if (this.pipOn) {
+          this.rig2.update(this.state === "paused" ? 0 : dt, this.car, {});
+        }
       }
+    }
+    // рамка окошка второго вида
+    const pipShow = this.pipOn && (this.state === "drive" || this.state === "paused") && this.hudVisible;
+    this.updatePipFrame(pipShow);
+    // плашка «ЭФИР» для камеры «Вертолёт»
+    const heliOn = this.rig.mode === 3 && (this.state === "drive" || this.state === "paused");
+    if (heliOn !== this.heliTagOn) {
+      this.heliTagOn = heliOn;
+      const tag = document.getElementById("helitag");
+      if (tag) tag.classList.toggle("hidden", !heliOn);
+    }
+    if (heliOn) {
+      const clock = document.getElementById("heliclock");
+      const d = new Date();
+      const txt = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+      if (clock && clock.textContent !== txt) clock.textContent = txt;
     }
     this.carView.update(this.carViewState());
     if (this.events && driving) {
       this.events.update(dt, this);
+    }
+    // сеть: отправить своё положение, сдвинуть машины друзей
+    if (this.net) {
+      this.net.update(dt);
+    }
+    // СТОЛКНОВЕНИЯ МАШИН: игрок, боты, друзья (толкаем только свою машину и ботов, чужие придут по сети)
+    if (driving) {
+      const others = this.events && this.events.active ? this.events.racers().slice(1) : this.isOnline() ? this.net.allCars() : [];
+      if (others.length) {
+        collideCars([this.car, ...others.map((r) => r.phys)], (car, strength) => {
+          if (car === this.car) this.onCarEvent({ type: "hit", strength });
+        });
+      }
     }
     if (this.fx) {
       this.fx.update(dt, this);
@@ -315,6 +460,7 @@ export class Game {
     if (!noRender) {
       this.updateAtmosphere(dt);
       this.render(dt);
+      this.updateNameTags();
     }
     this.fpsAcc += dt;
     this.fpsN++;
@@ -326,6 +472,12 @@ export class Game {
   }
   // Вернуть машину на дорогу с затемнением экрана.
   respawn(fromWater) {
+    // на полигоне — обратно на линию старта
+    if (this.onPolygon() && !(this.events && this.events.active)) {
+      if (this.ui) this.ui.fade(() => this.placeAtTestGround());
+      else this.placeAtTestGround();
+      return;
+    }
     if (this.ui) {
       this.ui.fade(
         () => {
@@ -360,6 +512,74 @@ export class Game {
       this.audio.shift(ev.up);
     }
   }
+  // ИМЕНА НАД МАШИНАМИ СОПЕРНИКОВ: точку над крышей переводим в координаты экрана.
+  updateNameTags() {
+    let box = this.tagBox;
+    if (!box) {
+      box = this.tagBox = document.createElement("div");
+      box.id = "nametags";
+      document.body.appendChild(box);
+      this.tagEls = [];
+    }
+    const racers = [];
+    const show = this.settings.nameTags !== false && this.hudVisible && (this.state === "drive" || this.state === "paused");
+    if (show && this.events && this.events.bots) racers.push(...this.events.bots.bots);
+    if (show && this.isOnline()) racers.push(...this.net.allCars().filter((c) => !racers.includes(c)));
+    const M = this.cam.viewProj;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    let used = 0;
+    for (const r of racers) {
+      const p = r.phys.pos;
+      const d = Math.hypot(p[0] - this.cam.pos[0], p[1] - this.cam.pos[1], p[2] - this.cam.pos[2]);
+      if (d > 140) continue;
+      const x = p[0];
+      const y = p[1] + 1.9;
+      const z = p[2];
+      const w = M[3] * x + M[7] * y + M[11] * z + M[15];
+      if (w < 0.5) continue;
+      const sx = ((M[0] * x + M[4] * y + M[8] * z + M[12]) / w) * 0.5 + 0.5;
+      const sy = 0.5 - ((M[1] * x + M[5] * y + M[9] * z + M[13]) / w) * 0.5;
+      if (sx < -0.1 || sx > 1.1 || sy < -0.1 || sy > 1.1) continue;
+      let el = this.tagEls[used];
+      if (!el) {
+        el = this.tagEls[used] = document.createElement("div");
+        el.className = "tag";
+        box.appendChild(el);
+      }
+      const color = "#" + (r.color >>> 0).toString(16).padStart(6, "0");
+      const html = `<i style="background:${color}">${r.place || ""}</i>${r.name}`;
+      if (el._html !== html) {
+        el.innerHTML = html;
+        el._html = html;
+      }
+      el.style.display = "";
+      el.style.left = (sx * W).toFixed(1) + "px";
+      el.style.top = (sy * H).toFixed(1) + "px";
+      el.style.opacity = d > 90 ? String(Math.max(0, (140 - d) / 50)) : "1";
+      used++;
+    }
+    for (let k = used; k < this.tagEls.length; k++) this.tagEls[k].style.display = "none";
+  }
+  updatePipFrame(show) {
+    let el = this.pipEl;
+    if (!el) {
+      el = this.pipEl = document.createElement("div");
+      el.id = "pipframe";
+      el.innerHTML = '<span class="pip-label"></span>';
+      document.body.appendChild(el);
+    }
+    this.pipVisible = show;
+    el.style.display = show ? "block" : "none";
+    if (!show) return;
+    const r = this.pipRect();
+    const key = r.x + "," + r.y + "," + r.w + "," + this.rig2.mode;
+    if (el.dataset.key !== key) {
+      el.dataset.key = key;
+      Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+      el.firstChild.textContent = CAMERA_MODES[this.rig2.mode] + (this.rig2.mode === 3 ? " · ● ЭФИР" : "");
+    }
+  }
   // Рисует кадр: обновление LOD мира, тени, отражения, сцена.
   render() {
     const renderer = this.renderer;
@@ -369,8 +589,10 @@ export class Game {
       const dx = cam.target[0] - cam.pos[0];
       const dz = cam.target[2] - cam.pos[2];
       const len = Math.hypot(dx, dz) || 1;
-      const cx = cam.pos[0] + (dx / len) * 45;
-      const cz = cam.pos[2] + (dz / len) * 45;
+      // тени рисуются вокруг области перед камерой; у далёкой камеры (вертолёт) — вокруг машины
+      const ahead = len > 60 ? len : 45;
+      const cx = cam.pos[0] + (dx / len) * ahead;
+      const cz = cam.pos[2] + (dz / len) * ahead;
       renderer.renderShadows(
         [cx, this.world.terrain.heightAt(cx, cz), cz],
         renderer.globals.u_sunDir,
@@ -381,5 +603,24 @@ export class Game {
       this.water.render(this);
     }
     renderer.render(this.cam);
+    // ВТОРОЙ ВИД: та же сцена ещё раз, другой камерой, в окошке справа снизу
+    if (this.pipVisible) {
+      const r = this.pipRect();
+      const pr = renderer.pixelRatio;
+      const H = renderer.canvas.height;
+      this.world.update(this.cam2.pos, 0, this.time, this.cam2);
+      const waters = this.world.waterItems;
+      const refl = waters.map((w) => w.uniforms.u_useRefl);
+      for (const w of waters) w.uniforms.u_useRefl = 0; // отражения в воде — только в основном виде
+      renderer.render(this.cam2, {
+        viewport: [
+          Math.round(r.x * pr),
+          Math.round(H - (r.y + r.h) * pr),
+          Math.round(r.w * pr),
+          Math.round(r.h * pr),
+        ],
+      });
+      waters.forEach((w, i) => (w.uniforms.u_useRefl = refl[i]));
+    }
   }
 }

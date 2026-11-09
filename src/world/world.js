@@ -11,6 +11,7 @@ import { Vegetation, scatterVegetation } from "./vegetation/scatter.js";
 import { buildRoadside } from "./roadside.js";
 import { buildStructures, buildWaterfall } from "./buildings.js";
 import { Signs } from "./signs.js";
+import { buildTestGround, inTestValley, onTestPad } from "./testGround.js";
 
 const nextTick = () => new Promise((f) => setTimeout(f, 0));
 
@@ -21,6 +22,8 @@ export class World {
     this.terrain = new Terrain();
     this.roads = new RoadNetwork();
     this.colliders = new ColliderGrid(16);
+    // кроны деревьев для проверки «видно ли машину» (камера «Вертолёт»): ячейка 16 м → список крон
+    this.canopies = new Map();
     this.chunks = [];
     this.lodItems = [];
     this.waterItems = [];
@@ -110,6 +113,9 @@ export class World {
       });
     }
     mark("outer");
+    // полигон за южными горами (world/testGround.js)
+    this.testGroundItems = buildTestGround(this, this.r);
+    mark("testGround");
     if (hooks.after) {
       await hooks.after(this, onProgress);
     }
@@ -274,12 +280,67 @@ export class World {
       fn(camPos, dt, time);
     }
   }
+  // Запомнить крону дерева: центр (x, z), радиус r, высота от y0 до y1.
+  addCanopy(x, z, r, y0, y1) {
+    const c = { x, z, r, y0, y1 };
+    const i0 = Math.floor((x - r) / 16);
+    const i1 = Math.floor((x + r) / 16);
+    const k0 = Math.floor((z - r) / 16);
+    const k1 = Math.floor((z + r) / 16);
+    for (let i = i0; i <= i1; i++) {
+      for (let k = k0; k <= k1; k++) {
+        const key = i * 100003 + k;
+        let list = this.canopies.get(key);
+        if (!list) this.canopies.set(key, (list = []));
+        list.push(c);
+      }
+    }
+  }
+  // ВИДНО ЛИ ТОЧКУ b ИЗ ТОЧКИ a: не мешают ли рельеф, кроны деревьев и стены зданий.
+  // Идём от b (машина) к a (камера) шагами по 2 м, пока луч не поднимется высоко над землёй.
+  lineOfSight(a, b) {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    const len = Math.hypot(dx, dy, dz);
+    const steps = Math.ceil(len / 2);
+    let px = b[0];
+    let pz = b[2];
+    for (let n = 1; n <= steps; n++) {
+      const t = n / steps;
+      const x = b[0] + dx * t;
+      const y = b[1] + dy * t;
+      const z = b[2] + dz * t;
+      const ground = this.terrain.heightAt(x, z);
+      if (y < ground - 0.3) return false;
+      if (y - ground > 40) return true; // выше любых деревьев и домов
+      const list = this.canopies.get(Math.floor(x / 16) * 100003 + Math.floor(z / 16));
+      if (list) {
+        for (const c of list) {
+          if (y > c.y0 && y < c.y1 && (x - c.x) ** 2 + (z - c.z) ** 2 < c.r * c.r) return false;
+        }
+      }
+      if (this.colliders.raycast(px, pz, x, z, y) < 1) return false;
+      px = x;
+      pz = z;
+    }
+    return true;
+  }
   // ЧТО ПОД КОЛЕСОМ. Возвращает в out: h — высота поверхности, surface — "road" | "shoulder" | "grass" | "gravel",
   // bridge/tunnel — на мосту ли / в тоннеле, road — какая дорога.
   // Если точка ближе (полуширина дороги + 1.45 м) к оси дороги — высота берётся с дороги, иначе с рельефа.
   // У перекрёстков вместо этого работает поле перекрёстка (асфальт со скруглёнными углами).
   // Резкая смена между этими двумя высотами — частая причина «подлётов» на краю дороги.
   groundAt(x, z, out) {
+    // ПОЛИГОН за картой: ровный асфальт, за стенкой — гравий и склоны долины (дорог карты тут нет)
+    if (inTestValley(x, z)) {
+      out.h = this.terrain.heightAt(x, z);
+      out.surface = onTestPad(x, z) ? "road" : "gravel";
+      out.bridge = false;
+      out.tunnel = false;
+      out.road = null;
+      return out;
+    }
     // у перекрёстка: скруглённые углы и плавный переход высот (junctions.js)
     const jn = this.roads.junctionAt(x, z);
     if (jn && jn.F <= 1.45) {
