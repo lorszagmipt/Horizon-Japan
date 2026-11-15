@@ -150,7 +150,8 @@ void main() {
   vec4 wp = vec4(p, 1.0);
 #else
   #ifdef OUTLINE
-  p += n * u_outline;
+  // a_ext.w = 1 — у этой детали контура нет (накладки, тонкие пластины)
+  p += n * u_outline * (1.0 - a_ext.w);
   #endif
   vec4 wp = u_model * vec4(p, 1.0);
   n = normalize(mat3(u_model) * n);
@@ -202,6 +203,7 @@ void main() {
   if (camNear < 3.2 && hash12(floor(gl_FragCoord.xy)) > (camNear - 1.0) / 2.2) discard;
 #endif
 #ifdef OUTLINE
+  if (v_ext.w > 0.5) discard;
   fragColor = vec4(applyFog(u_color, v_wpos), 1.0);
   return;
 #else

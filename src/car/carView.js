@@ -1,19 +1,37 @@
-// Машина на экране: модель, колёса, фары, наклоны кузова — по состоянию из физики.
+// Машина на экране: модель, колёса, суппорты, контур, тень — по состоянию из физики.
 
 import { rgb } from "../core/math.js";
 import { mat4Create, mat4Multiply } from "../core/matrix.js";
 import { MeshBuilder, makeTransform } from "../render/mesh.js";
 import { buildCarGeometry } from "./carMesh.js";
 
+// Модели машин загружаются в видеокарту один раз на каждую машину (а не на каждого бота или смену цвета).
+function gpuModel(renderer, spec) {
+  const cache = renderer._carModels || (renderer._carModels = new Map());
+  let m = cache.get(spec.id);
+  if (!m) {
+    const geo = buildCarGeometry(spec);
+    m = {
+      geo,
+      body: renderer.createMesh(geo.body),
+      wheel: renderer.createMesh(geo.wheel),
+      caliper: renderer.createMesh(geo.caliper),
+    };
+    cache.set(spec.id, m);
+  }
+  return m;
+}
+
 export class CarView {
   constructor(t, e, s, o = {}) {
     this.r = t;
     this.items = [];
     this.spec = e;
-    const i = buildCarGeometry(e);
+    const gm = gpuModel(t, e);
+    const i = gm.geo;
     this.model = i;
-    const n = t.createMesh(i.body);
-    const a = t.createMesh(i.wheel);
+    const n = gm.body;
+    const a = gm.wheel;
     this.matrix = mat4Create();
     this.bounds = {
       c: [0, 0, 0],
@@ -39,7 +57,7 @@ export class CarView {
       cull: "front",
       uniforms: {
         u_model: this.matrix,
-        u_outline: 0.022,
+        u_outline: 0.018,
         u_color: [0.09, 0.07, 0.11],
       },
       bounds: this.bounds,
@@ -59,10 +77,26 @@ export class CarView {
         bounds: this.bounds,
         order: 2,
       });
+      // суппорт: поворачивается с рулём, но не крутится с колесом
+      const cm = mat4Create();
+      const cal = t.add({
+        mesh: gm.caliper,
+        defines: ["CARMAT"],
+        uniforms: {
+          u_model: cm,
+          u_tint: [1, 1, 1],
+        },
+        bounds: this.bounds,
+        order: 2,
+        maxDist: 60,
+        reflect: false,
+      });
       return {
         wp: m,
         m: p,
         it: d,
+        cm,
+        cal,
       };
     });
     const r = new MeshBuilder();
@@ -96,6 +130,7 @@ export class CarView {
         m.maxDist = o.maxDist;
       }
     }
+    for (const w of this.wheels) this.items.push(w.cal);
     this._tmp = mat4Create();
   }
   setColor(t) {
@@ -110,6 +145,9 @@ export class CarView {
     for (const t of this.items) {
       this.r.remove(t);
     }
+    this.r.gl.deleteVertexArray(this.blob.mesh.vao);
+    this.r.gl.deleteBuffer(this.blob.mesh.ib);
+    for (const k in this.blob.mesh.bufs) this.r.gl.deleteBuffer(this.blob.mesh.bufs[k]);
   }
   update(t) {
     const e = t.pitch - t.bodyPitch;
@@ -123,18 +161,12 @@ export class CarView {
     for (const c of this.wheels) {
       const h = c.wp.front ? -t.steer : 0;
       const l = c.wp.side < 0;
-      const m = makeTransform(
-        c.wp.x,
-        i,
-        c.wp.z,
-        (l ? Math.PI : 0) + h,
-        1,
-        1,
-        1,
-        l ? -t.wheelSpin : t.wheelSpin,
-        0,
-      );
+      const yaw = (l ? Math.PI : 0) + h;
+      const m = makeTransform(c.wp.x, i, c.wp.z, yaw, 1, 1, 1, l ? -t.wheelSpin : t.wheelSpin, 0);
       mat4Multiply(c.m, this.matrix, m);
+      // суппорт стоит в задней верхней четверти колеса на обеих сторонах
+      const k = makeTransform(c.wp.x, i, c.wp.z, yaw, 1, 1, 1, l ? 0.9 : -0.9, 0);
+      mat4Multiply(c.cm, this.matrix, k);
     }
     this.body.uniforms.u_emissive = t.braking ? 1 : 0;
     const n = t.groundH !== undefined ? t.groundH : t.pos[1];
