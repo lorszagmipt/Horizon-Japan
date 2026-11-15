@@ -87,7 +87,12 @@ __game.car.P.brake = 28      // тормоза (у первой машины 22)
 | Хочу поменять | Где |
 |---|---|
 | Машину: мощность, сцепление, скорость | `src/car/cars.js` → `phys` |
-| Размеры и форму кузова | `src/car/cars.js` → `body` |
+| Форму кузова: линии верха, плеча, низа, ширину, кабину | `src/car/cars.js` → `body` (что значит каждое поле — в начале файла) |
+| Фары, фонари, решётки, полосы на кузове | `src/car/cars.js` → `body.decals` и `body.lines` |
+| Антикрыло, зеркала, ковши, брызговики | `src/car/cars.js` → `body.wing`, `mirrors`, `pods`, `mudflaps` |
+| Колёса: рисунок спиц, цвет, суппорты | `src/car/cars.js` → `wheel`; сами колёса — `src/car/carWheels.js` |
+| Материалы машины (краска, стекло, хром, свет фар) | `src/car/carParts.js` → `MAT` |
+| Как из линий получается кузов | `src/car/carShape.js` (форма), `src/car/carMesh.js` (сборка) |
 | Поведение всех машин (занос, прыжки) | `src/car/physics.js` |
 | Что под колесом (дорога / трава) | `src/world/world.js` → `groundAt` |
 | Форму дорог | `src/world/mapData.js` → `ROADS` |
@@ -97,8 +102,13 @@ __game.car.P.brake = 28      // тормоза (у первой машины 22)
 | Камеру «Вертолёт»: высота, зум, облёт | `src/camera/cameraRig.js` → `HELI` (новости) и `HELI_COURSE` (по курсу), в начале файла |
 | Окошко второго вида: размер и место | `src/game/game.js` → `pipRect` |
 | Цвета машин в гараже | `src/car/cars.js` → `PALETTE` |
-| Боты: сила, «резинка», решётка | `src/race/bots.js` → `BOT_LEVELS`, `BOT_TUNE` |
-| Ракета, нитро, банан, коробки, шкала | `src/race/items.js` → `ITEM_TUNE` |
+| Боты: уровни сложности (повороты, тормоза, ошибки, старт) | `src/race/bots.js` → `BOT_LEVELS` |
+| Боты: «резинка», дистанция при обгоне, возврат на трассу | `src/race/bots.js` → `BOT_TUNE` |
+| Гоночная траектория ботов (запас от края дороги) | `src/race/raceLine.js` → `EDGE_MARGIN` |
+| Способности: сила, время действия, радиусы, коробки, шкала | `src/race/items.js` → `ITEM_TUNE` |
+| Способности: кому что выпадает (по месту в гонке) | `src/race/items.js` → `ITEM_TUNE.odds` |
+| Тоннель: высота стен и свода, тротуары, шаг ламп, цвета | `src/world/tunnel.js` → `TUNNEL`, `LAMP_EVERY`, цвета `C_…` |
+| Сколько земли над тоннелем | `src/world/terrain.js` → `TUNNEL_COVER` |
 | Онлайн с друзьями | `src/net/net.js`, инструкция — `docs/MULTIPLAYER.md` |
 | Полигон: размер, где стоит, прямая, круги, слалом | `src/world/testGround.js` → `TEST_GROUND` |
 | Замеры на полигоне (0–100, 100–0, перегрузка) | `src/game/telemetry.js` |
