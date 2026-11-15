@@ -183,6 +183,12 @@ uniform float u_sunScale;
 #ifdef TEXTURED
 uniform sampler2D u_tex;
 #endif
+#ifdef TERRAIN
+// ТОННЕЛЬ: точки оси трубы (xyz, w = 1 — дальше есть участок) и охват: xy — центр, z — радиус, w — полуширина трубы.
+// Землю, попавшую внутрь трубы, не рисуем — так в настоящем склоне получается отверстие.
+uniform vec4 u_tun[16];
+uniform vec4 u_tunBox;
+#endif
 out vec4 fragColor;
 
 #ifdef PAD
@@ -192,6 +198,28 @@ ${PAD_GLSL_FUNCS}
 void main() {
 #ifdef CLIP
   if (v_wpos.y < u_clipY) discard;
+#endif
+#ifdef TERRAIN
+  if (u_tunBox.z > 0.0) {
+    vec2 tq = v_wpos.xz - u_tunBox.xy;
+    if (dot(tq, tq) < u_tunBox.z * u_tunBox.z) {
+      for (int i = 0; i < 15; i++) {
+        if (u_tun[i].w < 0.5) break;
+        vec2 ta = u_tun[i].xz;
+        vec2 tb = u_tun[i + 1].xz - ta;
+        float tt = dot(v_wpos.xz - ta, tb) / dot(tb, tb);
+        // на стыках участков допускаем небольшой нахлёст, на концах трубы — ровный срез
+        float lo = i == 0 ? 0.0 : -0.04;
+        float hi = u_tun[i + 1].w < 0.5 ? 1.0 : 1.04;
+        if (tt < lo || tt > hi) continue;
+        float td = length(v_wpos.xz - (ta + tb * tt)) / u_tunBox.w;
+        if (td < 1.0) {
+          float top = mix(u_tun[i].y, u_tun[i + 1].y, tt) + 4.6 + 3.6 * sqrt(1.0 - td * td);
+          if (v_wpos.y < top) discard;
+        }
+      }
+    }
+  }
 #endif
 #ifdef DEPTH
   fragColor = vec4(1.0);

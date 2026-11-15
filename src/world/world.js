@@ -9,6 +9,7 @@ import { buildWaterGeometry } from "./water.js";
 import { createSky } from "../render/sky.js";
 import { Vegetation, scatterVegetation } from "./vegetation/scatter.js";
 import { buildRoadside } from "./roadside.js";
+import { buildTunnels } from "./tunnel.js";
 import { buildStructures, buildWaterfall } from "./buildings.js";
 import { Signs } from "./signs.js";
 import { buildTestGround, inTestValley, onTestPad } from "./testGround.js";
@@ -82,6 +83,7 @@ export class World {
     onProgress(0.52, "Ограждения, мосты и тоннель…");
     await nextTick();
     buildRoadside(this);
+    this.tunnelItems = buildTunnels(this);
     this.signs = new Signs(this.r);
     this.signs.buildRoadSigns(this);
     mark("roadside");
@@ -331,7 +333,8 @@ export class World {
   // Если точка ближе (полуширина дороги + 1.45 м) к оси дороги — высота берётся с дороги, иначе с рельефа.
   // У перекрёстков вместо этого работает поле перекрёстка (асфальт со скруглёнными углами).
   // Резкая смена между этими двумя высотами — частая причина «подлётов» на краю дороги.
-  groundAt(x, z, out) {
+  // y (необязательно) — высота того, кто спрашивает: если он высоко над тоннелем, под ним склон горы, а не дорога в трубе.
+  groundAt(x, z, out, y) {
     // ПОЛИГОН за картой: ровный асфальт, за стенкой — гравий и склоны долины (дорог карты тут нет)
     if (inTestValley(x, z)) {
       out.h = this.terrain.heightAt(x, z);
@@ -355,7 +358,7 @@ export class World {
     const road =
       !this.roads.edge || this.roads.edgeDist(x, z) < 4 ? this.roads.nearest(x, z, 30) : null;
     // на дороге или обочине: высота полотна дороги
-    if (road && road.d <= road.hw + 1.45) {
+    if (road && road.d <= road.hw + 1.45 && !(y !== undefined && road.tun > 0.5 && y > road.h + 8.5)) {
       out.h = road.h;
       out.surface = road.d <= road.hw ? "road" : "shoulder";
       out.bridge = road.bridge;

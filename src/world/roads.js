@@ -10,6 +10,9 @@ import { buildJunctions } from "./junctions.js";
 // Расстояние между соседними точками дороги после сглаживания, метров.
 const SAMPLE_STEP = 2;
 
+// На скольких точках дороги (по 2 м) от портала рельеф поднимается от выемки до нетронутого склона.
+const TUNNEL_RAMP = 9;
+
 // Сглаживает ломаную из точек ROADS[...].pts в плавную кривую (сплайн Катмулла–Рома) с шагом SAMPLE_STEP.
 function splineSample(f, t) {
   const e = f.slice();
@@ -98,6 +101,7 @@ export class RoadNetwork {
     this.hash = new Map();
     this.hashCell = 24;
     this.junctions = [];
+    this.tunnels = []; // тоннели: { road, a, b } — номера первой и последней точки дороги внутри горы
     this._res = {
       d: 0,
       h: 0,
@@ -107,6 +111,7 @@ export class RoadNetwork {
       t: 0,
       bridge: false,
       tunnel: false,
+      tun: 0,
       side: 0,
       tx: 0,
       tz: 1,
@@ -350,6 +355,33 @@ export class RoadNetwork {
         }
       }
       s.gap = u;
+      // ТОННЕЛЬ: tun — насколько точка «внутри горы»: 0 снаружи, 1 в глубине, у порталов плавный переход.
+      // По tun рельеф над тоннелем остаётся нетронутым (terrain.js), а деревья растут как обычно.
+      s.tun = null;
+      let first = -1;
+      for (let h = 0; h <= o; h++) {
+        const inside = h < o && (s.flags[h] & 2) !== 0;
+        if (inside && first < 0) {
+          first = h;
+        }
+        if (!inside && first >= 0) {
+          const last = h - 1;
+          if (last - first >= 16) {
+            if (!s.tun) {
+              s.tun = new Float32Array(o);
+            }
+            for (let d = first; d <= last; d++) {
+              s.tun[d] = smoothstep(0, TUNNEL_RAMP, Math.min(d - first, last - d));
+            }
+            this.tunnels.push({ road: s, a: first, b: last });
+          } else {
+            for (let d = first; d <= last; d++) {
+              s.flags[d] &= ~2;
+            }
+          }
+          first = -1;
+        }
+      }
     }
     for (const s of this.roads) {
       s.sak = new Float32Array(s.n);
@@ -455,6 +487,7 @@ export class RoadNetwork {
     res.t = bestT;
     res.bridge = (bestRoad.flags[bestI] & 1) !== 0 || (bestRoad.flags[next] & 1) !== 0;
     res.tunnel = (bestRoad.flags[bestI] & 2) !== 0 && (bestRoad.flags[next] & 2) !== 0;
+    res.tun = bestRoad.tun ? lerp(bestRoad.tun[bestI], bestRoad.tun[next], bestT) : 0;
     res.tx = bestRoad.tx[bestI];
     res.tz = bestRoad.tz[bestI];
     res.side = (x - px) * bestRoad.tz[bestI] - (z - pz) * bestRoad.tx[bestI];

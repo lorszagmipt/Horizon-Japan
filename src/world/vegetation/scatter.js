@@ -326,6 +326,38 @@ export function scatterVegetation(f, t) {
       n[L].push(makeInstance(D, y, E, k, i, plantTint(L, y, k, i, l)));
     }
   }
+  // ДЕРЕВЬЯ НАД ТОННЕЛЕМ. Основной посев обходит полосу вдоль любой дороги, но в тоннеле дорога спрятана
+  // в горе — склон над ней засаживаем отдельно (со своим генератором случайных чисел, чтобы остальной лес не изменился).
+  for (const tn of s.tunnels) {
+    const tr = seededRandom(7717 + tn.a);
+    const rd = tn.road;
+    const band = rd.hw + 10;
+    for (let q = tn.a; q <= tn.b; q += Math.max(1, Math.round(d / 2))) {
+      if (rd.tun[q] < 0.45) {
+        continue;
+      }
+      for (let lat = -band; lat <= band; lat += d) {
+        const side = lat + (tr() - 0.5) * d * 0.9;
+        const along = (tr() - 0.5) * d * 0.9;
+        const y = rd.x[q] + rd.tz[q] * side + rd.tx[q] * along;
+        const k = rd.z[q] - rd.tx[q] * side + rd.tz[q] * along;
+        const w = tr();
+        sampleBiome(y, k, l);
+        const M = Math.max(0, 1 - l.s - l.a - l.h);
+        const _ = l.f;
+        const z = l.s * (0.12 + 0.74 * _) + l.a * (0.16 + 0.78 * _) + l.h * (0.06 + 0.8 * _) + M * (0.012 + 0.4 * _);
+        if (w > z) {
+          continue;
+        }
+        const E = e.heightAt(y, k);
+        if (E < rd.h[q] + 8.5 || !c(y, k) || r(y, k) || e.normalAt(y, k)[1] < 0.76 || h(y, k, E, 3.2)) {
+          continue;
+        }
+        const L = pickTree(l, y, k, E, tr);
+        n[L].push(makeInstance(VEGETATION_BY_ID[L], y, E, k, tr, plantTint(L, y, k, tr, l)));
+      }
+    }
+  }
   for (const [g, b] of [
     ["bush", 9],
     ["rock", 26],

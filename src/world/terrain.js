@@ -10,6 +10,9 @@ import { TEST_GROUND, onTestPad, valleyMask } from "./testGround.js";
 
 const FUJI = WORLD.fuji;
 
+// Сколько земли должно быть над дорогой в тоннеле (свод трубы — 7,8 м над полотном).
+const TUNNEL_COVER = 9.6;
+
 // Цвета земли по биомам.
 const TERRAIN_COLORS = {
   sakG1: rgb(0x5aa548),
@@ -349,6 +352,13 @@ export class Terrain {
             // земля у дороги подводится к высоте полотна, но на 22 см ниже
             height = lerp(base, road.h - 0.22, k);
             mask = k;
+            // ТОННЕЛЬ: в глубине горы рельеф не трогаем (склон остаётся целым), у порталов — плавный переход.
+            // Над самой трубой земля не ниже свода с запасом, чтобы труба нигде не выглядывала.
+            if (road.tun > 0) {
+              const cover = road.h + TUNNEL_COVER * (1 - smoothstep(road.hw + 4, road.hw + 14, road.d));
+              height = lerp(height, Math.max(base, cover), road.tun);
+              mask = k * (1 - road.tun);
+            }
           }
         }
         // у перекрёстка вместо этого — по форме перекрёстка (со скруглёнными углами и плавной высотой)

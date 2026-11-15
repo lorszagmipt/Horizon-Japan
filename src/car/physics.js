@@ -145,10 +145,10 @@ export class CarPhysics {
     const halfBase = this.wb / 2;
     const halfTrack = this.halfW * 0.85;
     const ground = this.ground;
-    const hFront = this.world.groundAt(x + fwd[0] * halfBase, z + fwd[1] * halfBase, ground).h;
-    const hRear = this.world.groundAt(x - fwd[0] * halfBase, z - fwd[1] * halfBase, ground).h;
-    const hSideA = this.world.groundAt(x + side[0] * halfTrack, z + side[1] * halfTrack, ground).h;
-    const hSideB = this.world.groundAt(x - side[0] * halfTrack, z - side[1] * halfTrack, ground).h;
+    const hFront = this.world.groundAt(x + fwd[0] * halfBase, z + fwd[1] * halfBase, ground, this.pos[1]).h;
+    const hRear = this.world.groundAt(x - fwd[0] * halfBase, z - fwd[1] * halfBase, ground, this.pos[1]).h;
+    const hSideA = this.world.groundAt(x + side[0] * halfTrack, z + side[1] * halfTrack, ground, this.pos[1]).h;
+    const hSideB = this.world.groundAt(x - side[0] * halfTrack, z - side[1] * halfTrack, ground, this.pos[1]).h;
     const pitchTarget = Math.atan2(hFront - hRear, halfBase * 2);
     const rollTarget = Math.atan2(hSideA - hSideB, halfTrack * 2);
     this.pitch = lerp(this.pitch, clamp(pitchTarget, -0.6, 0.6), k);
@@ -180,7 +180,7 @@ export class CarPhysics {
     let vLong = this.vx * sinYaw + this.vz * cosYaw;
     const vLat = this.vx * latX + this.vz * latZ;
     const speed = Math.hypot(vLong, vLat);
-    const ground = this.world.groundAt(this.pos[0], this.pos[2], this.ground);
+    const ground = this.world.groundAt(this.pos[0], this.pos[2], this.ground, this.pos[1]);
     this.surface = ground.surface;
     // --- ПОКРЫТИЕ: сцепление (surfaceGrip) и сопротивление качению (surfaceDrag) ---
     let surfaceGrip =
@@ -389,7 +389,7 @@ export class CarPhysics {
     // Пока машина на земле, она «прилипает» к поверхности, а её вертикальная скорость = скорость подъёма земли под ней.
     // Если земля резко ушла вниз — машина отрывается и летит. Если земля под машиной за один шаг резко подскочила
     // (ступенька), groundVy получается большим, и следующий отрыв подбросит машину вверх — источник «подлётов».
-    const groundH = this.world.groundAt(this.pos[0], this.pos[2], this.ground).h;
+    const groundH = this.world.groundAt(this.pos[0], this.pos[2], this.ground, this.pos[1]).h;
     if (this.onGround) {
       const heightAbove = this.pos[1] - groundH;
       const groundVy = (groundH - this.pos[1]) / dt;
