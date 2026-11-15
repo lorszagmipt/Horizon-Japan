@@ -983,6 +983,7 @@ export class UI {
             ["easy", "Лёгкие"],
             ["normal", "Средние"],
             ["hard", "Сложные"],
+            ["master", "Мастера"],
           ],
           e.botLevel || "normal",
         )}</div>

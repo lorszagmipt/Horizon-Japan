@@ -68,7 +68,7 @@ const DEFAULT_SETTINGS = {
   heliStyle: "news", // камера «Вертолёт»: "news" — новости, "course" — по курсу
   pipMode: -1, // второй вид в окошке: -1 — выключен, иначе номер режима камеры
   bots: 3, // сколько ботов-соперников в заездах (0 — без соперников)
-  botLevel: "normal", // сложность ботов: "easy" | "normal" | "hard"
+  botLevel: "normal", // сложность ботов: "easy" | "normal" | "hard" | "master"
   nameTags: true, // имена над машинами соперников
   netName: "", // имя в онлайн-игре
   items: "boxes", // способности: "boxes" — коробки на трассе, "meter" — шкала, "off" — выключены

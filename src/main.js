@@ -112,6 +112,8 @@ async function main() {
       surf: car.surface,
     };
   };
+  // управление автопилота для текущего заезда (для проверок гонок с ботами)
+  window.__pilot = (ai) => autopilot(game, game.events.active.P, ai);
   window.__autodrive = (eventId, maxTime = 400, carId) => {
     if (carId) {
       settings.car = carId;
