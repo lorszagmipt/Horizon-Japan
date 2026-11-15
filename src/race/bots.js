@@ -128,7 +128,7 @@ class Bot {
     this.mistake = null; // текущая ошибка: { kind, t }
     this.nextMistake = level.errors * this.calm * (0.4 + Math.random());
     this.vp = null; // скорость в каждой точке траектории
-    this.effects = { spin: 0, boost: 0 }; // для способностей (банан, ракета, нитро)
+    this.effects = { spin: 0, boost: 0, slow: 0 }; // для способностей: крутит (spin), мотор не тянет (slow)
     this.item = null; // способность в руках (режим «коробки»)
     this.meter = 0; // шкала способностей (режим «шкала»), 0..1
     this.itemThink = 0;
@@ -252,6 +252,12 @@ export class BotField {
     if (e.spin > 0) {
       e.spin -= dt;
       bot.input = { throttle: 0, brake: 0.3, steer: Math.sin(e.spin * 14), handbrake: true, boost: false };
+    }
+    if (e.slow > 0) {
+      // после молнии мотор пару секунд «не тянет»
+      e.slow -= dt;
+      bot.input.throttle = Math.min(bot.input.throttle, 0.4);
+      bot.input.boost = false;
     }
     if (e.boost > 0) {
       e.boost -= dt;

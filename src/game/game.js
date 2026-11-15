@@ -44,7 +44,7 @@ export class Game {
     this.buildParkedCars();
     this.spotTimer = 0;
     // эффекты способностей на машине игрока: spin — крутит после банана/ракеты, boost — нитро
-    this.playerFx = { spin: 0, boost: 0 };
+    this.playerFx = { spin: 0, boost: 0, slow: 0 };
     // онлайн-игра с друзьями (src/net/net.js): пока не создана комната — выключена
     this.net = new NetSession(this);
     // полигон за картой (world/testGround.js) и замеры на нём
@@ -359,15 +359,21 @@ export class Game {
       if (items) {
         const me = this.events.playerRacer();
         if (pressed.has("item")) items.use(me);
-        if (pressed.has("item1")) items.use(me, "rocket");
-        if (pressed.has("item2")) items.use(me, "nitro");
-        if (pressed.has("item3")) items.use(me, "banana");
+        if (pressed.has("item1")) items.use(me, 0);
+        if (pressed.has("item2")) items.use(me, 1);
+        if (pressed.has("item3")) items.use(me, 2);
       }
       // после банана или ракеты машину несколько мгновений крутит — руль не слушается
       let spinInput = null;
       if (this.playerFx.spin > 0) {
         this.playerFx.spin -= dt;
         spinInput = { throttle: 0, brake: 0.3, steer: Math.sin(this.playerFx.spin * 14), handbrake: true, boost: false };
+      }
+      // после молнии мотор пару секунд «не тянет»
+      if (this.playerFx.slow > 0) {
+        this.playerFx.slow -= dt;
+        controls.throttle = Math.min(controls.throttle, 0.4);
+        controls.boost = false;
       }
       const carInput = spinInput ? spinInput :
         this.events && this.events.lockControls

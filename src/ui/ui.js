@@ -8,7 +8,7 @@ import { GRAPHICS_PRESETS, saveSettings } from "../game/settings.js";
 import { CARS, carNumbers } from "../car/cars.js";
 import { CAMERA_MODES } from "../camera/cameraRig.js";
 import { EVENTS, EVENT_TYPES, formatTime } from "../race/events.js";
-import { ITEM_TYPES, ITEM_ORDER } from "../race/items.js";
+import { ITEM_TYPES } from "../race/items.js";
 
 // Значок лучшей медали в списке заездов.
 const MEDAL_ICON = { gold: "🥇 ", silver: "🥈 ", bronze: "🥉 " };
@@ -528,10 +528,13 @@ export class UI {
       const it = me.item ? ITEM_TYPES[me.item] : null;
       html = `<div class="ic ${it ? "full" : ""}">${it ? it.icon : "?"}</div><div class="lbl">${it ? it.name + ` <span class="k">${key("item")}</span>` : "Коробки «?» на трассе"}</div>`;
     } else {
-      const full = (me.meter || 0) >= 1;
-      html = `<div class="meter"><i style="width:${Math.round((me.meter || 0) * 100)}%"></i></div><div class="choices ${full ? "full" : ""}">${ITEM_ORDER.map(
-        (k, n) => `<span>${ITEM_TYPES[k].icon}<b>${key("item" + (n + 1))}</b></span>`,
-      ).join("")}</div>`;
+      // шкала: когда полная — три способности на выбор (атака, скорость, защита)
+      const full = (me.meter || 0) >= 1 && me.hand;
+      const hand = full ? me.hand : ["attack", "speed", "trap"];
+      const dim = { attack: "⚔️", speed: "💨", trap: "🛡️" };
+      html = `<div class="meter"><i style="width:${Math.round((me.meter || 0) * 100)}%"></i></div><div class="choices ${full ? "full" : ""}">${hand
+        .map((k, n) => `<span title="${full ? ITEM_TYPES[k].name : ""}">${full ? ITEM_TYPES[k].icon : dim[k]}<b>${key("item" + (n + 1))}</b></span>`)
+        .join("")}</div>`;
     }
     if (el._html !== html) {
       el.innerHTML = html;
