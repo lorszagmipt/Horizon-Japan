@@ -7,6 +7,7 @@ import { MeshBuilder, boxGeo, cylinderGeo, icosphereGeo, makeTransform } from ".
 import { lakeDistance } from "./terrain.js";
 import { makeRock } from "./vegetation/models.js";
 import { StaticBatch } from "./batch.js";
+import { beam, dormer, frustum } from "./shapes.js";
 
 function addPart(f, t, e, s) {
   f.append(t, e, s, "set");
@@ -225,43 +226,141 @@ function makeShrine() {
   return f;
 }
 
-function makeCastle() {
-  const f = new MeshBuilder();
-  const t = rgb(0x8e8a84);
-  const e = rgb(0xf7f3ea);
-  const s = rgb(0x3d4f63);
-  const o = rgb(0xe3b54a);
-  addPart(f, cylinderGeo(17, 12.5, 0, 9, 4), makeTransform(0, 0, 0, Math.PI / 4), t);
-  let i = 9;
-  let n = 16;
-  for (let a = 0; a < 4; a++) {
-    const r = a === 3 ? 3.2 : 4.2;
-    addPart(f, boxGeo(n, r, n * 0.82), makeTransform(0, i + r / 2, 0), e);
-    for (const c of [-1, 1]) {
-      for (let u = -1; u <= 1; u++) {
-        addPart(
-          f,
-          boxGeo(1, 1, 0.1),
-          makeTransform(u * n * 0.28, i + r * 0.55, c * n * 0.41),
-          [0.15, 0.13, 0.12],
-        );
+// ЗАМОК (главная башня). Каменное основание с вогнутыми стенами, четыре белых яруса, вокруг каждого —
+// скат крыши с загнутыми углами и треугольными фронтонами, наверху двускатная крыша с золотыми рыбами.
+const CASTLE_TIERS = [
+  // ширина, глубина, высота стены яруса (м)
+  [16.6, 13.8, 4.4],
+  [13.2, 10.8, 3.4],
+  [10.2, 8.2, 3.2],
+  [7.6, 6.0, 3.0],
+];
+
+function castleTower(f, tiers, y0, eave0, colors) {
+  const { white, roof, wood, cream } = colors;
+  const ridgeCol = [roof[0] * 0.78, roof[1] * 0.78, roof[2] * 0.78];
+  let y = y0;
+  for (let k = 0; k < tiers.length; k++) {
+    const [w, d, h] = tiers[k];
+    addPart(f, boxGeo(w, h, d), makeTransform(0, y + h / 2, 0), white);
+    if (k === 0) {
+      // нижний ярус обшит тёмными досками
+      addPart(f, boxGeo(w + 0.12, h * 0.36, d + 0.12), makeTransform(0, y + h * 0.18, 0), wood);
+    }
+    // окна по всем четырём стенам
+    const wy = y + h * 0.66;
+    const nx = Math.max(2, Math.round(w / 2.7));
+    const nz = Math.max(2, Math.round(d / 2.7));
+    for (const sgn of [-1, 1]) {
+      for (let u = 0; u < nx; u++) {
+        const x = -w / 2 + ((u + 0.5) * w) / nx;
+        addPart(f, boxGeo(0.95, 1.05, 0.12), makeTransform(x, wy, sgn * (d / 2 + 0.02)), [0.13, 0.12, 0.12]);
+        addPart(f, boxGeo(1.2, 0.12, 0.2), makeTransform(x, wy - 0.6, sgn * (d / 2 + 0.04)), wood);
+      }
+      for (let u = 0; u < nz; u++) {
+        const z = -d / 2 + ((u + 0.5) * d) / nz;
+        addPart(f, boxGeo(0.12, 1.05, 0.95), makeTransform(sgn * (w / 2 + 0.02), wy, z), [0.13, 0.12, 0.12]);
+        addPart(f, boxGeo(0.2, 0.12, 1.2), makeTransform(sgn * (w / 2 + 0.04), wy - 0.6, z), wood);
       }
     }
-    i += r;
-    addRoof(f, n + 0.5, n * 0.82 + 0.5, i, a === 3 ? 4.5 : 2.4, 1.5, s);
-    i += a === 3 ? 0 : 1.6;
-    n *= 0.76;
+    const top = y + h;
+    const eave = eave0 - k * 0.12;
+    const ew = w + eave * 2;
+    const ed = d + eave * 2;
+    // доска под свесом (её видно снизу) и тёмная кромка черепицы
+    addPart(f, boxGeo(ew, 0.14, ed), makeTransform(0, top - 0.42, 0), cream);
+    addPart(f, boxGeo(ew + 0.25, 0.16, ed + 0.25), makeTransform(0, top - 0.28, 0), ridgeCol);
+    if (k < tiers.length - 1) {
+      const [w2, d2] = tiers[k + 1];
+      const rise = 1.75;
+      frustum(f, ew + 0.2, ed + 0.2, top - 0.22, w2 + 0.3, d2 + 0.3, top + rise, roof, false);
+      // рёбра по углам ската; кончик загнут вверх
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const lo = [sx * (ew / 2 + 0.1), top - 0.2, sz * (ed / 2 + 0.1)];
+          const hi = [sx * (w2 / 2 + 0.15), top + rise + 0.02, sz * (d2 / 2 + 0.15)];
+          beam(f, hi, lo, 0.36, 0.2, ridgeCol);
+          beam(f, lo, [lo[0] + sx * 0.75, lo[1] + 0.5, lo[2] + sz * 0.75], 0.34, 0.2, ridgeCol);
+        }
+      }
+      // треугольные фронтоны: на чётных ярусах спереди и сзади, на нечётных — по бокам
+      if (k % 2 === 0) {
+        for (const sgn of [-1, 1]) {
+          dormer(f, 0, top + 0.05, sgn * (d2 / 2), 0, sgn, w * 0.3, 1.55, (d - d2) / 2 + eave * 0.55, roof, white);
+        }
+      } else {
+        for (const sgn of [-1, 1]) {
+          dormer(f, sgn * (w2 / 2), top + 0.05, 0, sgn, 0, d * 0.34, 1.45, (w - w2) / 2 + eave * 0.55, roof, white);
+        }
+      }
+      y = top + rise - 0.35;
+    } else {
+      // верхняя крыша: скат вокруг и двускатная крыша с фронтонами
+      const rw = w * 0.78;
+      const rd = d * 0.6;
+      frustum(f, ew + 0.2, ed + 0.2, top - 0.22, rw, rd, top + 1.25, roof, false);
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const lo = [sx * (ew / 2 + 0.1), top - 0.2, sz * (ed / 2 + 0.1)];
+          beam(f, [sx * (rw / 2), top + 1.27, sz * (rd / 2)], lo, 0.34, 0.2, ridgeCol);
+          beam(f, lo, [lo[0] + sx * 0.7, lo[1] + 0.5, lo[2] + sz * 0.7], 0.32, 0.2, ridgeCol);
+        }
+      }
+      const gh = 2.3;
+      addRoof(f, rw, rd, top + 1.2, gh, 0.45, roof);
+      y = top + 1.2 + gh;
+      return { ridgeY: y, ridgeHalf: rw / 2 + 0.45 };
+    }
   }
-  for (const a of [-1, 1]) {
-    addPart(
-      f,
-      boxGeo(0.6, 1.4, 0.4),
-      makeTransform(a * 4.2, i + 4.4, 0, 0, 1, 1, 1, 0, a * 0.4),
-      o,
-    );
+  return { ridgeY: y, ridgeHalf: 1 };
+}
+
+// Золотая рыба-сятихоко на конце конька: sgn — на каком конце (−1 или +1).
+function addShachi(f, x, y, sgn, gold) {
+  addPart(f, boxGeo(0.55, 0.9, 0.42), makeTransform(x, y + 0.4, 0, 0, 1, 1, 1, 0, sgn * 0.25), gold);
+  addPart(f, boxGeo(0.4, 0.95, 0.34), makeTransform(x - sgn * 0.22, y + 1.15, 0, 0, 1, 1, 1, 0, -sgn * 0.35), gold);
+  addPart(f, boxGeo(0.7, 0.3, 0.12), makeTransform(x - sgn * 0.5, y + 1.7, 0, 0, 1, 1, 1, 0, -sgn * 0.9), gold);
+}
+
+function makeCastle() {
+  const f = new MeshBuilder();
+  const stone = rgb(0x8e8a84);
+  const stoneDark = rgb(0x7b7771);
+  const colors = {
+    white: rgb(0xf7f3ea),
+    roof: rgb(0x3d4f63),
+    wood: rgb(0x2e2925),
+    cream: rgb(0xe9e2d0),
+  };
+  const gold = rgb(0xe3b54a);
+  // каменное основание: внизу пологое, кверху всё круче
+  frustum(f, 25, 22.2, 0, 21.4, 18.6, 4, stoneDark, false);
+  frustum(f, 21.4, 18.6, 4, 19.2, 16.4, 7.4, stone, false);
+  frustum(f, 19.2, 16.4, 7.4, 18.3, 15.5, 9.6, stone, true);
+  const top = castleTower(f, CASTLE_TIERS, 9.6, 1.75, colors);
+  for (const sgn of [-1, 1]) {
+    addShachi(f, sgn * (top.ridgeHalf - 0.15), top.ridgeY, sgn, gold);
   }
+  // пристроенная малая башня сбоку (на своём основании пониже)
+  const side = new MeshBuilder();
+  frustum(side, 10.4, 10.4, 0, 8.2, 8.2, 4, stoneDark, false);
+  frustum(side, 8.2, 8.2, 4, 7.4, 7.4, 7.2, stone, true);
+  castleTower(
+    side,
+    [
+      [6.6, 6.6, 3.2],
+      [4.2, 4.2, 2.4],
+    ],
+    7.2,
+    1.3,
+    colors,
+  );
+  f.append(side, makeTransform(CASTLE_SIDE[0], 0, CASTLE_SIDE[1]));
   return f;
 }
+
+// Где стоит малая башня относительно главной (м, до поворота замка).
+const CASTLE_SIDE = [12.2, 4.6];
 
 function makeStall(f) {
   const t = new MeshBuilder();
@@ -391,6 +490,7 @@ export function buildStructures(f, t) {
       f.vegExclusions.push([g.x, g.z, g.r]);
     }
   }
+  f.houseSpots = m;
   const p = LANDMARKS;
   {
     let { x: g, z: b } = p.pagoda;
@@ -436,8 +536,13 @@ export function buildStructures(f, t) {
   {
     let { x: g, z: b } = p.sakuraView;
     const y = l(g, b, 26, 26, 0) - 1.5;
-    a.add(makeCastle(), makeTransform(g, y, b, 0.5), g, b, null, 0.25);
+    const yaw = 0.5;
+    a.add(makeCastle(), makeTransform(g, y, b, yaw), g, b, null, 0.25);
     i.addCircle(g, b, 15, y - 2, y + 60);
+    // малая башня сбоку — отдельное препятствие
+    const sx = g + CASTLE_SIDE[0] * Math.cos(yaw) + CASTLE_SIDE[1] * Math.sin(yaw);
+    const sz = b - CASTLE_SIDE[0] * Math.sin(yaw) + CASTLE_SIDE[1] * Math.cos(yaw);
+    i.addCircle(sx, sz, 6.2, y - 2, y + 30);
   }
   {
     const g = s.lakes.find((_) => _.id === "mirror");
