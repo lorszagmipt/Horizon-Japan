@@ -109,6 +109,9 @@ __game.car.P.brake = 28      // тормоза (у первой машины 22)
 | Способности: кому что выпадает (по месту в гонке) | `src/race/items.js` → `ITEM_TUNE.odds` |
 | Тоннель: высота стен и свода, тротуары, шаг ламп, цвета | `src/world/tunnel.js` → `TUNNEL`, `LAMP_EVERY`, цвета `C_…` |
 | Сколько земли над тоннелем | `src/world/terrain.js` → `TUNNEL_COVER` |
+| Деревни: столбы, автоматы, амбары, грядки, чайные поля (сколько и как часто) | `src/world/village.js` → `VILLAGE` |
+| Замок: размеры и число ярусов | `src/world/buildings.js` → `CASTLE_TIERS` |
+| «Подлёты» на ступеньках у края дороги (насколько резко рельеф может подбросить машину) | `src/car/physics.js` → `GROUND_VY_RISE` |
 | Онлайн с друзьями | `src/net/net.js`, инструкция — `docs/MULTIPLAYER.md` |
 | Полигон: размер, где стоит, прямая, круги, слалом | `src/world/testGround.js` → `TEST_GROUND` |
 | Замеры на полигоне (0–100, 100–0, перегрузка) | `src/game/telemetry.js` |

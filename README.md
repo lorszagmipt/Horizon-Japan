@@ -111,7 +111,9 @@ npm run zip
 | `src/world/junctions.js` | **Перекрёстки**: скруглённые углы, плавный переход высот, зебра |
 | `src/physics/colliders.js` | Препятствия: отбойники, стены, стволы |
 | `src/world/vegetation/` | Деревья, трава, цветы и их расстановка |
-| `src/world/buildings.js`, `roadside.js`, `signs.js` | Постройки, ограждения, щиты |
+| `src/world/buildings.js`, `roadside.js`, `signs.js` | Постройки (дома, замок, храм), ограждения, щиты |
+| `src/world/village.js` | **Жизнь в деревнях**: дворы, столбы с проводами, чайные поля |
+| `src/world/shapes.js` | «Кирпичики» для построек: скаты крыш, брусья, фронтоны |
 | `src/race/events.js` | **Заезды**: маршруты, типы, время на медали |
 | `src/race/raceManager.js` | Проведение заезда: чекпоинты, финиш, рекорды |
 | `src/race/driftScore.js` | Очки за дрифт |
@@ -138,6 +140,7 @@ npm run zip
   `JUNCTION_CROSSWALKS` — рисовать ли зебру (`true` / `false`).
 - **Сложность ботов** → `src/race/bots.js`, таблицы `BOT_LEVELS` и `BOT_TUNE` в начале файла.
 - **Способности** → `src/race/items.js`, таблица `ITEM_TUNE` (сила, длительность, шансы выпадения).
+- **Деревни** (сколько столбов, автоматов, чайных полей) → `src/world/village.js`, таблица `VILLAGE` в начале файла.
 - **Время на медали** → `src/race/events.js`, поле `vref` у заезда.
 - **Тексты меню** → `src/ui/ui.js` (поиск по тексту: *Правка → Найти в файлах*, Ctrl+Shift+F).
 
