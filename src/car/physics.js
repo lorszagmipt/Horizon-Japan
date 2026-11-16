@@ -6,6 +6,9 @@ import { inTestValley } from "../world/testGround.js";
 
 // Ускорение свободного падения, м/с².
 const GRAVITY = 9.81;
+// Как быстро может расти вертикальная скорость машины от рельефа, м/с за секунду (защита от «подлётов» на ступеньках).
+// Больше — резче трамплины, но и ступеньки подбрасывают сильнее.
+const GROUND_VY_RISE = 120;
 
 // Шаг физики: 1/120 секунды. Кадр игры (1/60 с) делится на такие шаги,
 // чтобы физика вела себя одинаково при любом FPS.
@@ -94,6 +97,7 @@ export class CarPhysics {
     this.pos = [x, ground.h + 0.02, z];
     this.yaw = yaw;
     this.vx = this.vz = this.vy = 0;
+    this.prevGroundVy = 0;
     this.yawRate = 0;
     this.steer = 0;
     this.drifting = false;
@@ -398,9 +402,18 @@ export class CarPhysics {
         this.airTime = 0;
         this.vy = Math.min(this.vy, this.prevGroundVy || 0);
       } else {
-        // вертикальная скорость от рельефа ограничена ±20 м/с
-        this.prevGroundVy = clamp(groundVy, -20, 20);
-        this.vy = this.prevGroundVy;
+        // вертикальная скорость от рельефа ограничена ±20 м/с…
+        let gv = clamp(groundVy, -20, 20);
+        // …и не может вырасти рывком. Ступенька (край дороги, стык с рельефом) за один шаг даёт огромную
+        // «скорость подъёма»; раньше она целиком доставалась машине, и на следующем бугорке её подбрасывало в небо.
+        // Теперь скорость вверх нарастает не быстрее GROUND_VY_RISE: настоящий трамплин работает как прежде
+        // (там подъём плавный), а ступенька почти не подбрасывает.
+        const prevGv = this.prevGroundVy || 0;
+        if (gv > prevGv + GROUND_VY_RISE * dt) {
+          gv = prevGv + GROUND_VY_RISE * dt;
+        }
+        this.prevGroundVy = gv;
+        this.vy = gv;
         this.pos[1] = groundH;
       }
     }
