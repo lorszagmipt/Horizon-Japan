@@ -68,6 +68,11 @@ async function main() {
   }
   game.state = "menu";
   game.ui.show("menu");
+  // Открыли по ссылке-приглашению вида …?room=ABCDE — сразу входим в комнату друга.
+  const inviteCode = new URLSearchParams(location.search).get("room");
+  if (inviteCode) {
+    game.ui.openInvite(inviteCode);
+  }
   if (TEST_MODE && location.search.includes("drive")) {
     game.state = "drive";
     game.ui.hideScreens();

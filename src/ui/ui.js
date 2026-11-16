@@ -707,8 +707,8 @@ export class UI {
         })
         .join("");
       body = `
-        <div class="room-code"><span>Код комнаты</span><b>${net.code}</b><div class="btn small ghost" data-act="copy">Скопировать</div></div>
-        <div class="note">${net.isHost ? "Вы — хозяин комнаты. Отправьте код друзьям. Заезд выбираете вы: «Заезды» — и все поедут вместе (боты тоже, если включены)." : "Вы в комнате. Заезд выбирает хозяин комнаты 👑 — когда он начнёт, вас перенесёт на старт."}</div>
+        <div class="room-code"><span>Код комнаты</span><b>${net.code}</b><div class="btn small ghost" data-act="copy">Скопировать код</div><div class="btn small" data-act="invite">🔗 Скопировать приглашение</div></div>
+        <div class="note">${net.isHost ? "Вы — хозяин комнаты. Отправьте друзьям приглашение-ссылку (откроют — и сразу в комнате) или код. Заезд выбираете вы: «Заезды» — и все поедут вместе (боты тоже, если включены)." : "Вы в комнате. Заезд выбирает хозяин комнаты 👑 — когда он начнёт, вас перенесёт на старт."}</div>
         <table class="players">${list}</table>
         <div class="foot-btns">
           <div class="btn small" data-act="drive">🚗 Поехать</div>
@@ -724,7 +724,7 @@ export class UI {
           <div class="panel-sub"><h3>Создать комнату</h3><div class="note">Получите код и отправьте его друзьям (до 8 игроков).</div>
             <div class="btn small" data-act="host">${busy ? "Подключаемся…" : "Создать"}</div></div>
           <div class="panel-sub"><h3>Войти по коду</h3><div class="note">Введите код, который прислал друг.</div>
-            <input id="netcode" maxlength="5" placeholder="ABCDE" style="text-transform:uppercase">
+            <input id="netcode" maxlength="5" placeholder="ABCDE" style="text-transform:uppercase" value="${esc(this.inviteCode || "")}">
             <div class="btn small" data-act="join">${busy ? "Подключаемся…" : "Войти"}</div></div>
         </div>
         <div class="note">${local ? "Режим проверки на одном компьютере: откройте игру во второй вкладке с тем же адресом." : "Связь напрямую между компьютерами (WebRTC) через бесплатный сервис PeerJS. Все игроки должны открыть одну и ту же игру."}</div>
@@ -779,6 +779,16 @@ export class UI {
         this.toast("Код: " + net.code);
       }
     });
+    act("invite", () => {
+      const link = this.inviteLink(net.code);
+      const home = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+      try {
+        navigator.clipboard.writeText(link);
+        this.toast(home ? "Ссылка скопирована. Она заработает у друзей, когда игра будет выложена в интернет — пока отправляйте код" : "Приглашение скопировано — отправьте ссылку другу");
+      } catch (e) {
+        this.toast("Ссылка: " + link);
+      }
+    });
     act("leave", () => {
       if (g.events.active) g.events.cancel();
       net.leave();
@@ -796,6 +806,29 @@ export class UI {
     });
     this.show("online");
     this.updateNetBadge();
+  }
+  // Ссылка-приглашение: адрес игры + ?room=КОД. Друг открывает её и сразу попадает в комнату.
+  inviteLink(code) {
+    const url = new URL(location.href);
+    url.search = "";
+    url.hash = "";
+    if (location.search.includes("netlocal")) url.searchParams.set("netlocal", "1");
+    url.searchParams.set("room", code);
+    return url.toString();
+  }
+  // Игру открыли по ссылке-приглашению (?room=КОД): показываем экран «Играть с друзьями» и сразу входим.
+  openInvite(code) {
+    this.inviteCode = String(code).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+    if (this.inviteCode.length < 5) {
+      this.inviteCode = "";
+      return;
+    }
+    this.openOnline(false);
+    const join = this.screens.online.querySelector("[data-act=join]");
+    if (join && join.onclick) {
+      this.toast("Входим в комнату " + this.inviteCode + "…");
+      join.onclick();
+    }
   }
   // Значок «ОНЛАЙН · КОД · игроков» в углу экрана.
   updateNetBadge() {
