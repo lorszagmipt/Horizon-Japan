@@ -11,6 +11,7 @@ import { Vegetation, scatterVegetation } from "./vegetation/scatter.js";
 import { buildRoadside } from "./roadside.js";
 import { buildTunnels } from "./tunnel.js";
 import { buildStructures, buildWaterfall } from "./buildings.js";
+import { buildVillageExtras } from "./village.js";
 import { Signs } from "./signs.js";
 import { buildTestGround, inTestValley, onTestPad } from "./testGround.js";
 
@@ -103,6 +104,9 @@ export class World {
     this.vegetation = new Vegetation(this, this.quality);
     this.vegetation.build(scatter);
     mark("vegBuild");
+    // дворы, столбы и чайные поля — после леса, на свободных местах (world/village.js)
+    this.villageItems = buildVillageExtras(this);
+    mark("village");
     onProgress(0.7, "Дальние горы и Фудзи…");
     await nextTick();
     for (const geo of terrain.buildOuter()) {

@@ -14,7 +14,7 @@ function addPart(f, t, e, s) {
   return f;
 }
 
-function addRoof(f, t, e, s, o, i, n) {
+export function addRoof(f, t, e, s, o, i, n) {
   const a = t / 2 + i;
   const r = e / 2 + i;
   const c = Math.atan2(o, r);
@@ -477,7 +477,7 @@ export function buildStructures(f, t) {
       const E = l(M, _, T.size[0], T.size[1], S) - 0.3;
       a.add(T, makeTransform(M, E, _, S), M, _, null, 0.15);
       i.addBox(M, _, T.size[0] - 1.6, T.size[1] - 2.2, S, E - 1, E + 8);
-      m.push([M, _]);
+      m.push([M, _, S, T.size[0], T.size[1], E, g.style]);
       y++;
       if (n() < 0.6) {
         const P = M + Math.sin(S) * (T.size[1] / 2 + 1.5) + Math.cos(S) * 2;
@@ -490,7 +490,7 @@ export function buildStructures(f, t) {
       f.vegExclusions.push([g.x, g.z, g.r]);
     }
   }
-  f.houseSpots = m;
+  f.houseSpots = m; // дома деревень: [x, z, поворот, ширина, глубина, высота земли, стиль] — для village.js
   const p = LANDMARKS;
   {
     let { x: g, z: b } = p.pagoda;
